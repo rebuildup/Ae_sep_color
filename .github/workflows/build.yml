@@ -218,30 +218,20 @@ jobs:
           
           # アセットの一覧を表示（デバッグ用）
           echo "📋 利用可能なアセット:"
-          echo "$RELEASE_JSON" | grep -o '"name":"[^"]*"' | head -10 | sed 's/"name":"//g' | sed 's/"//g' | while read name; do
-            echo "   - $name"
+          echo "$RELEASE_JSON" | jq -r '.assets[]?.name' | head -10 | while read name; do
+            [ -n "$name" ] && echo "   - $name"
           done
-          
+
           # アセットの情報を取得
           ASSET_NAME="${{ matrix.sdk_file }}"
-          
-          # JSONからアセット情報を抽出（より確実な方法）
-          ASSET_INFO=$(echo "$RELEASE_JSON" | grep -A 30 "\"name\":\s*\"$ASSET_NAME\"" | head -30)
-          
-          if [ -z "$ASSET_INFO" ]; then
+
+          # jqでダウンロードURLを厳密に取得
+          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | jq -r --arg name "$ASSET_NAME" '.assets[]? | select(.name == $name) | .browser_download_url' | head -1)
+
+          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
             echo "❌ SDKファイルが見つかりません: $ASSET_NAME"
             echo "利用可能なアセットの一覧:"
-            echo "$RELEASE_JSON" | grep -o '"name":"[^"]*"' | head -10
-            exit 1
-          fi
-          
-          # browser_download_urlを取得
-          DOWNLOAD_URL=$(echo "$ASSET_INFO" | grep -o "\"browser_download_url\":\s*\"[^\"]*\"" | head -1 | cut -d'"' -f4)
-          
-          if [ -z "$DOWNLOAD_URL" ]; then
-            echo "❌ ダウンロードURLが見つかりません: $ASSET_NAME"
-            echo "アセット情報:"
-            echo "$ASSET_INFO" | head -20
+            echo "$RELEASE_JSON" | jq -r '.assets[]?.name' | head -10
             exit 1
           fi
           
