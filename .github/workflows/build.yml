@@ -217,42 +217,33 @@ jobs:
           echo "📁 展開後のディレクトリ構造を確認中..."
           ls -la
           
-          # SDK rootを見つける (より効率的な検索)
-          # 重要: ディレクトリ名が "Examples" そのものは除外する
+          # SDK rootを見つける
+          # 注意: このSDKではHeaders/Util/Resourcesが ae*.AfterEffectsSDK/Examples の中にある
           SDK_ROOT=""
           
-          # パターン1: ae*.AfterEffectsSDK を探す
+          # パターン1: ae*.AfterEffectsSDK/Examples を探す（このSDKの実際の構造）
           for dir in ae*.AfterEffectsSDK 2>/dev/null; do
-            if [ "$dir" != "Examples" ] && [ -d "$dir" ] && [ -d "$dir/Headers" ] && [ -d "$dir/Util" ] && [ -d "$dir/Resources" ]; then
+            if [ -d "$dir/Examples/Headers" ] && [ -d "$dir/Examples/Util" ] && [ -d "$dir/Examples/Resources" ]; then
+              SDK_ROOT=$(cd "$dir/Examples" && pwd)
+              echo "✅ SDK rootを発見 (パターン1 - Examples内): $SDK_ROOT"
+              break
+            # 念のため、直下もチェック
+            elif [ -d "$dir/Headers" ] && [ -d "$dir/Util" ] && [ -d "$dir/Resources" ]; then
               SDK_ROOT=$(cd "$dir" && pwd)
-              echo "✅ SDK rootを発見 (パターン1): $SDK_ROOT"
-              echo "   ディレクトリ名: $dir"
+              echo "✅ SDK rootを発見 (パターン1 - 直下): $SDK_ROOT"
               break
             fi
           done
           
-          # パターン2: AfterEffectsSDK を含むディレクトリを探す
-          if [ -z "$SDK_ROOT" ]; then
-            for dir in *AfterEffectsSDK* 2>/dev/null; do
-              if [ "$dir" != "Examples" ] && [ -d "$dir" ] && [ -d "$dir/Headers" ] && [ -d "$dir/Util" ] && [ -d "$dir/Resources" ]; then
-                SDK_ROOT=$(cd "$dir" && pwd)
-                echo "✅ SDK rootを発見 (パターン2): $SDK_ROOT"
-                echo "   ディレクトリ名: $dir"
-                break
-              fi
-            done
-          fi
-          
-          # パターン3: Headers, Util, Resources を含むディレクトリを深さ2まで探す
+          # パターン2: Headers, Util, Resources を含む任意のディレクトリを深さ3まで探す
           if [ -z "$SDK_ROOT" ]; then
             echo "🔍 Headersディレクトリを検索中..."
-            for dir in $(find . -maxdepth 2 -type d -name "Headers" 2>/dev/null); do
+            for dir in $(find . -maxdepth 3 -type d -name "Headers" 2>/dev/null); do
               parent=$(dirname "$dir")
-              parent_name=$(basename "$parent")
-              if [ "$parent_name" != "Examples" ] && [ -d "$parent/Util" ] && [ -d "$parent/Resources" ]; then
+              if [ -d "$parent/Util" ] && [ -d "$parent/Resources" ]; then
                 SDK_ROOT=$(cd "$parent" && pwd)
-                echo "✅ SDK rootを発見 (パターン3): $SDK_ROOT"
-                echo "   ディレクトリ名: $parent_name"
+                echo "✅ SDK rootを発見 (パターン2): $SDK_ROOT"
+                echo "   親ディレクトリ: $(basename "$parent")"
                 break
               fi
             done
@@ -266,17 +257,12 @@ jobs:
             exit 1
           fi
           
-          # Examplesディレクトリが存在しない場合は作成
-          if [ ! -d "$SDK_ROOT/Examples" ]; then
-            echo "📁 Examplesディレクトリを作成"
-            mkdir -p "$SDK_ROOT/Examples/Template"
+          # SDK_ROOT が既に Examples の場合、Template ディレクトリを確保
+          if [ ! -d "$SDK_ROOT/Template" ]; then
+            echo "📁 Templateディレクトリを作成"
+            mkdir -p "$SDK_ROOT/Template"
           else
-            echo "✅ Examplesディレクトリは既に存在します"
-            # Templateディレクトリがない場合のみ作成
-            if [ ! -d "$SDK_ROOT/Examples/Template" ]; then
-              echo "📁 Templateディレクトリを作成"
-              mkdir -p "$SDK_ROOT/Examples/Template"
-            fi
+            echo "✅ Templateディレクトリは既に存在します"
           fi
           
           echo "✅ SDK root: $SDK_ROOT"
@@ -321,55 +307,41 @@ jobs:
           Write-Host "📁 展開後のディレクトリ構造を確認中..."
           Get-ChildItem -Directory | ForEach-Object { Write-Host "  - $($_.Name)" }
           
-          # SDK rootを見つける (より効率的な検索)
-          # 一般的なパターン: ae25.*.AfterEffectsSDK のようなディレクトリを探す
-          # 重要: ディレクトリ名が "Examples" そのものは除外する
+          # SDK rootを見つける
+          # 注意: このSDKではHeaders/Util/Resourcesが ae*.AfterEffectsSDK\Examples の中にある
           $sdkRoot = $null
           
-          # パターン1: ae*.AfterEffectsSDK を探す
+          # パターン1: ae*.AfterEffectsSDK\Examples を探す（このSDKの実際の構造）
           $sdkDirs = Get-ChildItem -Directory -Filter "ae*.AfterEffectsSDK" -ErrorAction SilentlyContinue
           foreach ($dir in $sdkDirs) {
-            # ディレクトリ名が "Examples" そのものでないことを確認
-            if ($dir.Name -ne "Examples" -and 
-                (Test-Path "$($dir.FullName)\Headers") -and 
-                (Test-Path "$($dir.FullName)\Util") -and 
-                (Test-Path "$($dir.FullName)\Resources")) {
+            $examplesPath = Join-Path $dir.FullName "Examples"
+            if ((Test-Path "$examplesPath\Headers") -and 
+                (Test-Path "$examplesPath\Util") -and 
+                (Test-Path "$examplesPath\Resources")) {
+              $sdkRoot = $examplesPath
+              Write-Host "✅ SDK rootを発見 (パターン1 - Examples内): $sdkRoot"
+              break
+            }
+            # 念のため、直下もチェック
+            elseif ((Test-Path "$($dir.FullName)\Headers") -and 
+                    (Test-Path "$($dir.FullName)\Util") -and 
+                    (Test-Path "$($dir.FullName)\Resources")) {
               $sdkRoot = $dir.FullName
-              Write-Host "✅ SDK rootを発見 (パターン1): $sdkRoot"
-              Write-Host "   ディレクトリ名: $($dir.Name)"
+              Write-Host "✅ SDK rootを発見 (パターン1 - 直下): $sdkRoot"
               break
             }
           }
           
-          # パターン2: AfterEffectsSDK を含むディレクトリを探す
-          if (-not $sdkRoot) {
-            $sdkDirs = Get-ChildItem -Directory | Where-Object { $_.Name -like "*AfterEffectsSDK*" -and $_.Name -ne "Examples" }
-            foreach ($dir in $sdkDirs) {
-              if ((Test-Path "$($dir.FullName)\Headers") -and 
-                  (Test-Path "$($dir.FullName)\Util") -and 
-                  (Test-Path "$($dir.FullName)\Resources")) {
-                $sdkRoot = $dir.FullName
-                Write-Host "✅ SDK rootを発見 (パターン2): $sdkRoot"
-                Write-Host "   ディレクトリ名: $($dir.Name)"
-                break
-              }
-            }
-          }
-          
-          # パターン3: Headers, Util, Resources を含むディレクトリを深さ2まで探す
+          # パターン2: Headers, Util, Resources を含む任意のディレクトリを深さ3まで探す
           if (-not $sdkRoot) {
             Write-Host "🔍 Headersディレクトリを検索中..."
-            $headersDirs = Get-ChildItem -Directory -Recurse -Depth 2 -Filter "Headers" -ErrorAction SilentlyContinue
+            $headersDirs = Get-ChildItem -Directory -Recurse -Depth 3 -Filter "Headers" -ErrorAction SilentlyContinue
             foreach ($dir in $headersDirs) {
               $parent = $dir.Parent.FullName
-              $parentName = $dir.Parent.Name
-              # ディレクトリ名が "Examples" そのものでないことを確認
-              if ($parentName -ne "Examples" -and
-                  (Test-Path "$parent\Util") -and 
-                  (Test-Path "$parent\Resources")) {
+              if ((Test-Path "$parent\Util") -and (Test-Path "$parent\Resources")) {
                 $sdkRoot = $parent
-                Write-Host "✅ SDK rootを発見 (パターン3): $sdkRoot"
-                Write-Host "   ディレクトリ名: $parentName"
+                Write-Host "✅ SDK rootを発見 (パターン2): $sdkRoot"
+                Write-Host "   親ディレクトリ: $($dir.Parent.Name)"
                 break
               }
             }
@@ -383,17 +355,12 @@ jobs:
             exit 1
           }
           
-          # Examplesディレクトリが存在しない場合は作成
-          if (-not (Test-Path "$sdkRoot\Examples")) {
-            Write-Host "📁 Examplesディレクトリを作成"
-            New-Item -ItemType Directory -Path "$sdkRoot\Examples\Template" -Force | Out-Null
+          # SDK_ROOT が既に Examples の場合、Template ディレクトリを確保
+          if (-not (Test-Path "$sdkRoot\Template")) {
+            Write-Host "📁 Templateディレクトリを作成"
+            New-Item -ItemType Directory -Path "$sdkRoot\Template" -Force | Out-Null
           } else {
-            Write-Host "✅ Examplesディレクトリは既に存在します"
-            # Templateディレクトリがない場合のみ作成
-            if (-not (Test-Path "$sdkRoot\Examples\Template")) {
-              Write-Host "📁 Templateディレクトリを作成"
-              New-Item -ItemType Directory -Path "$sdkRoot\Examples\Template" -Force | Out-Null
-            }
+            Write-Host "✅ Templateディレクトリは既に存在します"
           }
           
           Write-Host "✅ SDK root: $sdkRoot"
@@ -461,7 +428,8 @@ jobs:
           
           echo "📋 プラグインをSDK Templateディレクトリにコピー"
           
-          PLUGIN_DIR="$SDK_ROOT/Examples/Template/sep_color"
+          # SDK_ROOT は既に Examples ディレクトリ
+          PLUGIN_DIR="$SDK_ROOT/Template/sep_color"
           mkdir -p "$PLUGIN_DIR"
           
           # 必要なファイルをコピー
@@ -484,7 +452,8 @@ jobs:
         run: |
           Write-Host "📋 プラグインをSDK Templateディレクトリにコピー"
           
-          $pluginDir = "$env:SDK_ROOT\Examples\Template\sep_color"
+          # SDK_ROOT は既に Examples ディレクトリ
+          $pluginDir = "$env:SDK_ROOT\Template\sep_color"
           New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
           
           # 除外するディレクトリ
