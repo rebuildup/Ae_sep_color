@@ -1,0 +1,11 @@
+﻿C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(524,5): warning MSB8004: Output ディレクトリの末尾がスラッシュではありません。Output ディレクトリが適切に評価されるようにするために、このビルド インスタンスによってスラッシュが追加されます。
+  Compiling the PiPL
+  Microsoft(R) C/C++ Optimizing Compiler Version 19.44.35219 for x64
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+  
+  sep_colorPiPL.r
+  Microsoft(R) C/C++ Optimizing Compiler Version 19.44.35219 for x64
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+  
+  sep_colorPiPL.rrc
+  sep_color.vcxproj -> D:\1_projects\AfterEffects\plugin\SDK\Template\sep_color\output\sep_color.aex

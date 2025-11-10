@@ -1,0 +1,4 @@
+^D:\1_PROJECTS\AFTEREFFECTS\PLUGIN\SDK\TEMPLATE\SEP_COLOR\SEP_COLORPIPL.R
+cl /I "D:\1_projects\AfterEffects\plugin\SDK\Template\sep_color\Win\..\..\..\Headers" /EP ".."\\"sep_colorPiPL.r" > "x64\Debug\"\\"sep_colorPiPL.rr"
+"D:\1_projects\AfterEffects\plugin\SDK\Template\sep_color\Win\..\..\..\Resources\PiPLTool" "x64\Debug\sep_colorPiPL.rr" "x64\Debug\sep_colorPiPL.rrc"
+cl /D "MSWindows" /EP x64\Debug\sep_colorPiPL.rrc >               "D:\1_projects\AfterEffects\plugin\SDK\Template\sep_color\Win\"\\"sep_colorPiPL".rc
