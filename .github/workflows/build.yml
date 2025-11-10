@@ -206,29 +206,71 @@ jobs:
           
           # extractzstd.shを実行
           echo "🔧 extractzstd.shを実行してSDKを展開します..."
-          chmod +x extractzstd.sh
+          chmod +x extractzstd.sh zstd 2>/dev/null || true
           ./extractzstd.sh
           
-          # SDK rootを見つける
+          EXTRACT_EXIT_CODE=$?
+          if [ $EXTRACT_EXIT_CODE -ne 0 ]; then
+            echo "⚠️ extractzstd.shの実行で警告がありましたが続行します (exit code: $EXTRACT_EXIT_CODE)"
+          fi
+          
+          echo "📁 展開後のディレクトリ構造を確認中..."
+          ls -la
+          
+          # SDK rootを見つける (より効率的な検索)
           SDK_ROOT=""
-          for dir in $(find . -type d -name "Headers" 2>/dev/null); do
-            parent=$(dirname "$dir")
-            if [ -d "$parent/Util" ] && [ -d "$parent/Examples" ]; then
-              SDK_ROOT=$(cd "$parent" && pwd)
+          
+          # パターン1: ae*.AfterEffectsSDK を探す
+          for dir in ae*.AfterEffectsSDK 2>/dev/null; do
+            if [ -d "$dir" ] && [ -d "$dir/Headers" ] && [ -d "$dir/Util" ]; then
+              SDK_ROOT=$(cd "$dir" && pwd)
+              echo "✅ SDK rootを発見 (パターン1): $SDK_ROOT"
               break
             fi
           done
           
+          # パターン2: AfterEffectsSDK を含むディレクトリを探す
+          if [ -z "$SDK_ROOT" ]; then
+            for dir in *AfterEffectsSDK* 2>/dev/null; do
+              if [ -d "$dir" ] && [ -d "$dir/Headers" ] && [ -d "$dir/Util" ]; then
+                SDK_ROOT=$(cd "$dir" && pwd)
+                echo "✅ SDK rootを発見 (パターン2): $SDK_ROOT"
+                break
+              fi
+            done
+          fi
+          
+          # パターン3: Headers と Util を含むディレクトリを深さ2まで探す
+          if [ -z "$SDK_ROOT" ]; then
+            echo "🔍 Headersディレクトリを検索中..."
+            for dir in $(find . -maxdepth 2 -type d -name "Headers" 2>/dev/null); do
+              parent=$(dirname "$dir")
+              if [ -d "$parent/Util" ]; then
+                SDK_ROOT=$(cd "$parent" && pwd)
+                echo "✅ SDK rootを発見 (パターン3): $SDK_ROOT"
+                break
+              fi
+            done
+          fi
+          
           if [ -z "$SDK_ROOT" ]; then
             echo "❌ SDK root が見つかりません"
-            find . -maxdepth 3 -type d
+            echo "📁 現在のディレクトリ: $(pwd)"
+            echo "📁 ディレクトリ一覧:"
+            find . -maxdepth 2 -type d
             exit 1
+          fi
+          
+          # Examplesディレクトリが存在しない場合は作成
+          if [ ! -d "$SDK_ROOT/Examples" ]; then
+            echo "📁 Examplesディレクトリを作成"
+            mkdir -p "$SDK_ROOT/Examples/Template"
           fi
           
           echo "✅ SDK root: $SDK_ROOT"
           echo "SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
           
-          rm -f ../../AE_SDK.zip
+          rm -f ../../AE_SDK.zip 2>/dev/null || true
 
       - name: Extract and Setup SDK (Windows)
         if: matrix.platform == 'win'
@@ -260,27 +302,71 @@ jobs:
           Write-Host "🔧 extractzstd.batを実行してSDKを展開します..."
           cmd /c extractzstd.bat
           
-          # SDK rootを見つける
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "⚠️ extractzstd.batの実行で警告がありましたが続行します (exit code: $LASTEXITCODE)"
+          }
+          
+          Write-Host "📁 展開後のディレクトリ構造を確認中..."
+          Get-ChildItem -Directory | ForEach-Object { Write-Host "  - $($_.Name)" }
+          
+          # SDK rootを見つける (より効率的な検索)
+          # 一般的なパターン: ae25.*.AfterEffectsSDK のようなディレクトリを探す
           $sdkRoot = $null
-          $headersDirs = Get-ChildItem -Recurse -Directory -Filter "Headers" -ErrorAction SilentlyContinue
-          foreach ($dir in $headersDirs) {
-            $parent = $dir.Parent.FullName
-            if ((Test-Path "$parent\Util") -and (Test-Path "$parent\Examples")) {
-              $sdkRoot = $parent
+          
+          # パターン1: ae*.AfterEffectsSDK を探す
+          $sdkDirs = Get-ChildItem -Directory -Filter "ae*.AfterEffectsSDK" -ErrorAction SilentlyContinue
+          foreach ($dir in $sdkDirs) {
+            if ((Test-Path "$($dir.FullName)\Headers") -and (Test-Path "$($dir.FullName)\Util")) {
+              $sdkRoot = $dir.FullName
+              Write-Host "✅ SDK rootを発見 (パターン1): $sdkRoot"
               break
+            }
+          }
+          
+          # パターン2: AfterEffectsSDK を含むディレクトリを探す
+          if (-not $sdkRoot) {
+            $sdkDirs = Get-ChildItem -Directory | Where-Object { $_.Name -like "*AfterEffectsSDK*" }
+            foreach ($dir in $sdkDirs) {
+              if ((Test-Path "$($dir.FullName)\Headers") -and (Test-Path "$($dir.FullName)\Util")) {
+                $sdkRoot = $dir.FullName
+                Write-Host "✅ SDK rootを発見 (パターン2): $sdkRoot"
+                break
+              }
+            }
+          }
+          
+          # パターン3: Headers と Util を含むディレクトリを深さ2まで探す
+          if (-not $sdkRoot) {
+            Write-Host "🔍 Headersディレクトリを検索中..."
+            $headersDirs = Get-ChildItem -Directory -Recurse -Depth 2 -Filter "Headers" -ErrorAction SilentlyContinue
+            foreach ($dir in $headersDirs) {
+              $parent = $dir.Parent.FullName
+              if (Test-Path "$parent\Util") {
+                $sdkRoot = $parent
+                Write-Host "✅ SDK rootを発見 (パターン3): $sdkRoot"
+                break
+              }
             }
           }
           
           if (-not $sdkRoot) {
             Write-Host "❌ SDK root が見つかりません"
-            Get-ChildItem -Recurse -Directory -Depth 3 | Format-Table
+            Write-Host "📁 現在のディレクトリ: $(Get-Location)"
+            Write-Host "📁 ディレクトリ一覧:"
+            Get-ChildItem -Directory -Depth 2 | Select-Object FullName | Format-Table -AutoSize
             exit 1
+          }
+          
+          # Examplesディレクトリが存在しない場合は作成
+          if (-not (Test-Path "$sdkRoot\Examples")) {
+            Write-Host "📁 Examplesディレクトリを作成"
+            New-Item -ItemType Directory -Path "$sdkRoot\Examples\Template" -Force | Out-Null
           }
           
           Write-Host "✅ SDK root: $sdkRoot"
           Add-Content -Path $env:GITHUB_ENV -Value "SDK_ROOT=$sdkRoot"
           
-          Remove-Item "..\AE_SDK.zip" -Force
+          Remove-Item "..\AE_SDK.zip" -Force -ErrorAction SilentlyContinue
 
       # ==================== BuildAll.sln のビルド (Windowsのみ) ====================
       - name: Build BuildAll.sln (Windows)
