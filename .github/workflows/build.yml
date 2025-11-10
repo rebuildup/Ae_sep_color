@@ -47,20 +47,159 @@ jobs:
         if: matrix.platform == 'win'
         uses: microsoft/setup-msbuild@v2
 
-      # ==================== SDKのセットアップ ====================
-      - name: Extract AE SDK from tmp (Mac)
+      # ==================== プライベートリポジトリからSDKをダウンロード (Mac) ====================
+      - name: Download AE SDK from Private Repository (Mac)
+        if: matrix.platform == 'mac'
+        env:
+          GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
+        run: |
+          set -e
+          
+          REPO="rebuildup/my-ae-sdk-storage"
+          RELEASE_TAG_CANDIDATES=("sdk" "ae-sdk_25.6_61" "v25.6.61" "25.6.61")
+          
+          echo "📦 プライベートリポジトリからAeSDKをダウンロードします"
+          echo "   リポジトリ: $REPO"
+          echo "   SDKファイル: ${{ matrix.sdk_file }}"
+          
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "❌ GITHUB_TOKENが設定されていません"
+            exit 1
+          fi
+          
+          # リリース情報を取得
+          RELEASE_JSON=""
+          HTTP_STATUS=""
+          FOUND_TAG=""
+          
+          for RELEASE_TAG in "${RELEASE_TAG_CANDIDATES[@]}"; do
+            echo "🔍 リリース情報を取得中... (タグ: $RELEASE_TAG)"
+            RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" 2>&1)
+            
+            HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
+            RELEASE_JSON=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
+            
+            if [ "$HTTP_STATUS" == "200" ]; then
+              FOUND_TAG="$RELEASE_TAG"
+              echo "✅ リリースを見つけました: $FOUND_TAG"
+              break
+            fi
+          done
+          
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ リリース情報の取得に失敗しました"
+            exit 1
+          fi
+          
+          # アセット情報を取得
+          ASSET_NAME="${{ matrix.sdk_file }}"
+          ASSET_JSON=$(echo "$RELEASE_JSON" | jq -c --arg name "$ASSET_NAME" '.assets[]? | select(.name == $name)' | head -1)
+          
+          if [ -z "$ASSET_JSON" ]; then
+            echo "❌ SDKファイルが見つかりません: $ASSET_NAME"
+            exit 1
+          fi
+          
+          API_DOWNLOAD_URL=$(echo "$ASSET_JSON" | jq -r '.url // empty')
+          
+          # SDKをダウンロード
+          echo "⬇️  SDKをダウンロード中..."
+          curl -L \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            -H "User-Agent: GitHub-Actions" \
+            -o AE_SDK.zip \
+            -s -S "$API_DOWNLOAD_URL"
+          
+          if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
+            echo "❌ ダウンロードに失敗しました"
+            exit 1
+          fi
+          
+          echo "✅ ダウンロード完了 ($(du -h AE_SDK.zip | cut -f1))"
+
+      - name: Download AE SDK from Private Repository (Windows)
+        if: matrix.platform == 'win'
+        env:
+          GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
+        shell: pwsh
+        run: |
+          $repo = "rebuildup/my-ae-sdk-storage"
+          $releaseTags = @("sdk", "ae-sdk_25.6_61", "v25.6.61", "25.6.61")
+          
+          Write-Host "📦 プライベートリポジトリからAeSDKをダウンロードします"
+          Write-Host "   リポジトリ: $repo"
+          Write-Host "   SDKファイル: ${{ matrix.sdk_file }}"
+          
+          if (-not $env:GITHUB_TOKEN) {
+            Write-Host "❌ GITHUB_TOKENが設定されていません"
+            exit 1
+          }
+          
+          # リリース情報を取得
+          $foundTag = $null
+          $releaseJson = $null
+          
+          foreach ($tag in $releaseTags) {
+            Write-Host "🔍 リリース情報を取得中... (タグ: $tag)"
+            
+            try {
+              $headers = @{
+                "Authorization" = "token $env:GITHUB_TOKEN"
+                "Accept" = "application/vnd.github.v3+json"
+              }
+              
+              $releaseJson = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/tags/$tag" -Headers $headers -ErrorAction Stop
+              $foundTag = $tag
+              Write-Host "✅ リリースを見つけました: $foundTag"
+              break
+            } catch {
+              Write-Host "⚠️  タグ '$tag' が見つかりませんでした"
+            }
+          }
+          
+          if (-not $releaseJson) {
+            Write-Host "❌ リリース情報の取得に失敗しました"
+            exit 1
+          }
+          
+          # アセット情報を取得
+          $assetName = "${{ matrix.sdk_file }}"
+          $asset = $releaseJson.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
+          
+          if (-not $asset) {
+            Write-Host "❌ SDKファイルが見つかりません: $assetName"
+            exit 1
+          }
+          
+          # SDKをダウンロード
+          Write-Host "⬇️  SDKをダウンロード中..."
+          
+          $headers = @{
+            "Authorization" = "token $env:GITHUB_TOKEN"
+            "Accept" = "application/octet-stream"
+            "User-Agent" = "GitHub-Actions"
+          }
+          
+          Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "AE_SDK.zip"
+          
+          if (-not (Test-Path "AE_SDK.zip") -or (Get-Item "AE_SDK.zip").Length -eq 0) {
+            Write-Host "❌ ダウンロードに失敗しました"
+            exit 1
+          }
+          
+          Write-Host "✅ ダウンロード完了 ($([math]::Round((Get-Item 'AE_SDK.zip').Length / 1MB, 2)) MB)"
+
+      # ==================== SDKを展開してセットアップ (Mac) ====================
+      - name: Extract and Setup SDK (Mac)
         if: matrix.platform == 'mac'
         run: |
           set -e
           
-          echo "📦 tmpからSDKを展開します"
-          
-          # tmpディレクトリの確認
-          if [ ! -f "tmp/${{ matrix.sdk_file }}" ]; then
-            echo "❌ tmp/${{ matrix.sdk_file }} が見つかりません"
-            ls -la tmp/ || echo "tmpディレクトリが存在しません"
-            exit 1
-          fi
+          echo "📦 SDKを展開してセットアップします"
           
           # 作業ディレクトリの作成
           WORK_DIR="${{ github.workspace }}/ae_sdk_work"
@@ -69,11 +208,7 @@ jobs:
           # SDKを展開
           echo "📂 SDKを展開中..."
           cd "$WORK_DIR"
-          unzip -q "${{ github.workspace }}/tmp/${{ matrix.sdk_file }}"
-          
-          # SDK構造を探索
-          echo "📁 展開された構造:"
-          find . -maxdepth 3 -type d | head -20
+          unzip -q "${{ github.workspace }}/AE_SDK.zip"
           
           # SDK root を見つける (Headers と Util が存在するディレクトリ)
           SDK_ROOT=""
@@ -86,9 +221,13 @@ jobs:
           done
           
           if [ -z "$SDK_ROOT" ]; then
-            echo "❌ SDK root (Headers/Utilを含むディレクトリ) が見つかりません"
+            echo "❌ SDK root が見つかりません"
+            find . -maxdepth 3 -type d
             exit 1
           fi
+          
+          # 絶対パスに変換
+          SDK_ROOT=$(cd "$SDK_ROOT" && pwd)
           
           echo "✅ SDK root: $SDK_ROOT"
           echo "SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
@@ -96,25 +235,13 @@ jobs:
           # Examples/Template ディレクトリを作成
           mkdir -p "$SDK_ROOT/Examples/Template"
           
-          echo "✅ SDKのセットアップが完了しました"
+          rm -f "${{ github.workspace }}/AE_SDK.zip"
 
-      - name: Extract AE SDK from tmp (Windows)
+      - name: Extract and Setup SDK (Windows)
         if: matrix.platform == 'win'
         shell: pwsh
         run: |
-          Write-Host "📦 tmpからSDKを展開します"
-          
-          # tmpディレクトリの確認
-          $sdkZip = "tmp\${{ matrix.sdk_file }}"
-          if (-not (Test-Path $sdkZip)) {
-            Write-Host "❌ $sdkZip が見つかりません"
-            if (Test-Path "tmp") {
-              Get-ChildItem "tmp" | Format-Table
-            } else {
-              Write-Host "tmpディレクトリが存在しません"
-            }
-            exit 1
-          }
+          Write-Host "📦 SDKを展開してセットアップします"
           
           # 作業ディレクトリの作成
           $workDir = "${{ github.workspace }}\ae_sdk_work"
@@ -122,13 +249,9 @@ jobs:
           
           # SDKを展開
           Write-Host "📂 SDKを展開中..."
-          Expand-Archive -Path $sdkZip -DestinationPath $workDir -Force
+          Expand-Archive -Path "${{ github.workspace }}\AE_SDK.zip" -DestinationPath $workDir -Force
           
-          # SDK構造を探索
-          Write-Host "📁 展開された構造:"
-          Get-ChildItem $workDir -Directory -Recurse -Depth 3 | Select-Object -First 20 | Format-Table
-          
-          # SDK root を見つける (Headers と Util が存在するディレクトリ)
+          # SDK root を見つける
           $sdkRoot = $null
           $headersDirs = Get-ChildItem $workDir -Directory -Recurse -Filter "Headers"
           foreach ($dir in $headersDirs) {
@@ -140,7 +263,8 @@ jobs:
           }
           
           if (-not $sdkRoot) {
-            Write-Host "❌ SDK root (Headers/Utilを含むディレクトリ) が見つかりません"
+            Write-Host "❌ SDK root が見つかりません"
+            Get-ChildItem $workDir -Directory -Recurse -Depth 3 | Format-Table
             exit 1
           }
           
@@ -151,7 +275,7 @@ jobs:
           $templateDir = "$sdkRoot\Examples\Template"
           New-Item -ItemType Directory -Path $templateDir -Force | Out-Null
           
-          Write-Host "✅ SDKのセットアップが完了しました"
+          Remove-Item "${{ github.workspace }}\AE_SDK.zip" -Force
 
       # ==================== プラグインをSDK/Examples/Templateにコピー ====================
       - name: Copy plugin to SDK Template directory (Mac)
@@ -162,17 +286,16 @@ jobs:
           echo "📋 プラグインをSDK Templateディレクトリにコピー"
           
           PLUGIN_DIR="$SDK_ROOT/Examples/Template/sep_color"
-          
-          # sep_color ディレクトリを作成してファイルをコピー
           mkdir -p "$PLUGIN_DIR"
           
-          # 必要なファイルのみをコピー (tmpとae_sdk_workは除外)
+          # 必要なファイルのみをコピー
           rsync -av \
             --exclude='.git' \
             --exclude='tmp' \
             --exclude='ae_sdk_work' \
             --exclude='.github' \
             --exclude='output' \
+            --exclude='AE_SDK.zip' \
             "${{ github.workspace }}/" \
             "$PLUGIN_DIR/"
           
@@ -186,15 +309,13 @@ jobs:
           Write-Host "📋 プラグインをSDK Templateディレクトリにコピー"
           
           $pluginDir = "$env:SDK_ROOT\Examples\Template\sep_color"
-          
-          # sep_color ディレクトリを作成
           New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
           
-          # 必要なファイルをコピー (除外するディレクトリ以外)
+          # 除外するディレクトリ
           $excludeDirs = @('.git', 'tmp', 'ae_sdk_work', '.github', 'output')
           
           Get-ChildItem "${{ github.workspace }}" -Force | Where-Object {
-            $_.Name -notin $excludeDirs
+            $_.Name -notin $excludeDirs -and $_.Name -ne 'AE_SDK.zip'
           } | ForEach-Object {
             Copy-Item -Path $_.FullName -Destination $pluginDir -Recurse -Force
           }
@@ -202,32 +323,7 @@ jobs:
           Write-Host "✅ プラグインをコピーしました: $pluginDir"
           Add-Content -Path $env:GITHUB_ENV -Value "PLUGIN_DIR=$pluginDir"
 
-      # ==================== BuildAll.sln のビルド ====================
-      - name: Build BuildAll.sln (Mac)
-        if: matrix.platform == 'mac'
-        run: |
-          set -e
-          
-          echo "🔨 BuildAll.sln をビルドして依存関係を整えます"
-          
-          cd "$SDK_ROOT"
-          
-          # BuildAll.sln または類似のファイルを探す
-          if [ -f "BuildAll.sln" ]; then
-            BUILD_SLN="BuildAll.sln"
-          elif [ -f "Examples/BuildAll.sln" ]; then
-            BUILD_SLN="Examples/BuildAll.sln"
-            cd Examples
-          else
-            echo "⚠️ BuildAll.sln が見つかりません。スキップします"
-            echo "以下のファイルを確認:"
-            find . -maxdepth 2 -name "*.sln" || true
-            exit 0
-          fi
-          
-          # Xcodeプロジェクトが存在する場合はビルドしない(Windowsのみ必要)
-          echo "ℹ️ Mac環境ではBuildAllは不要です"
-
+      # ==================== BuildAll.sln のビルド (Windowsのみ) ====================
       - name: Build BuildAll.sln (Windows)
         if: matrix.platform == 'win'
         shell: pwsh
@@ -254,7 +350,8 @@ jobs:
                 /p:Platform=x64 `
                 /t:Build `
                 /v:minimal `
-                /m
+                /m `
+                /nologo
               
               Write-Host "✅ BuildAll.sln のビルドが完了しました"
             } catch {
@@ -263,7 +360,6 @@ jobs:
             }
           } else {
             Write-Host "⚠️ BuildAll.sln が見つかりません。スキップします"
-            Get-ChildItem -Filter "*.sln" -Recurse -Depth 2 | Select-Object -First 5 | Format-Table
           }
 
       # ==================== プラグインのビルド ====================
@@ -276,7 +372,6 @@ jobs:
           
           cd "$PLUGIN_DIR/Mac"
           
-          # プロジェクトファイルの確認
           if [ ! -f "sep_color.xcodeproj/project.pbxproj" ]; then
             echo "❌ Xcodeプロジェクトが見つかりません"
             ls -la
@@ -302,12 +397,11 @@ jobs:
           if [ -n "$PLUGIN_PATH" ]; then
             echo "✅ ビルド成功: $PLUGIN_PATH"
             
-            # アーティファクト用ディレクトリにコピー
             mkdir -p "${{ github.workspace }}/artifacts"
             cp -R "$PLUGIN_PATH" "${{ github.workspace }}/artifacts/"
           else
             echo "❌ ビルド成果物が見つかりません"
-            ls -la build/
+            find . -name "*.plugin" -o -name "*.aex"
             exit 1
           fi
 
@@ -319,7 +413,6 @@ jobs:
           
           Set-Location "$env:PLUGIN_DIR\Win"
           
-          # ソリューションファイルの確認
           if (-not (Test-Path "sep_color.sln")) {
             Write-Host "❌ ソリューションファイルが見つかりません"
             Get-ChildItem
@@ -332,7 +425,8 @@ jobs:
             /p:Platform=x64 `
             /t:Build `
             /v:minimal `
-            /m
+            /m `
+            /nologo
           
           # ビルド成果物の確認
           $aexPath = Get-ChildItem -Path . -Filter "sep_color.aex" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -340,13 +434,12 @@ jobs:
           if ($aexPath) {
             Write-Host "✅ ビルド成功: $($aexPath.FullName)"
             
-            # アーティファクト用ディレクトリにコピー
             $artifactsDir = "${{ github.workspace }}\artifacts"
             New-Item -ItemType Directory -Path $artifactsDir -Force | Out-Null
             Copy-Item -Path $aexPath.FullName -Destination $artifactsDir -Force
           } else {
             Write-Host "❌ ビルド成果物が見つかりません"
-            Get-ChildItem -Recurse | Where-Object { $_.Extension -eq ".aex" }
+            Get-ChildItem -Recurse | Where-Object { $_.Extension -eq ".aex" } | Format-Table
             exit 1
           }
 
