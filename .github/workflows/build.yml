@@ -478,7 +478,7 @@ jobs:
                 echo "⚠️  DMGのマウントに失敗しました: $DMG_FILE"
               fi
             fi
-          }
+          fi
 
           if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
             extract_nested_archives
