@@ -542,16 +542,37 @@ jobs:
           
           echo "✅ ビルド成功"
           
-          # ビルド成果物の確認
-          PLUGIN_PATH=$(find build -name "sep_color.plugin" -type d 2>/dev/null | head -1)
+          # ビルド成果物の確認（複数の場所を検索）
+          echo "📦 ビルド成果物を検索中..."
+          echo "   現在のディレクトリ: $(pwd)"
+          
+          # 複数の場所を検索
+          PLUGIN_PATH=""
+          for search_path in "build/sep_color.plugin" "build/Debug/sep_color.plugin" "build/Release/sep_color.plugin"; do
+            if [ -d "$search_path" ]; then
+              PLUGIN_PATH="$search_path"
+              echo "✅ ビルド成果物を発見: $PLUGIN_PATH"
+              break
+            fi
+          done
+          
+          # 見つからない場合は再帰検索
+          if [ -z "$PLUGIN_PATH" ]; then
+            echo "🔍 再帰的に検索中..."
+            PLUGIN_PATH=$(find build -name "sep_color.plugin" -type d 2>/dev/null | head -1)
+            if [ -n "$PLUGIN_PATH" ]; then
+              echo "✅ ビルド成果物を発見: $PLUGIN_PATH"
+            fi
+          fi
+          
           if [ -n "$PLUGIN_PATH" ]; then
-            echo "✅ ビルド成功: $PLUGIN_PATH"
-            
             mkdir -p "${{ github.workspace }}/artifacts"
             cp -R "$PLUGIN_PATH" "${{ github.workspace }}/artifacts/"
+            echo "✅ アーティファクトをコピーしました: artifacts/sep_color.plugin"
           else
             echo "❌ ビルド成果物が見つかりません"
-            find . -name "*.plugin" -o -name "*.aex"
+            echo "📁 ディレクトリ構造:"
+            find . -name "*.plugin" -o -name "*.o" | head -20
             exit 1
           fi
 
@@ -622,18 +643,44 @@ jobs:
           
           Write-Host "✅ ビルド成功"
           
-          # ビルド成果物の確認
-          $aexPath = Get-ChildItem -Path . -Filter "sep_color.aex" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          # ビルド成果物の確認（複数の場所を検索）
+          Write-Host "📦 ビルド成果物を検索中..."
+          Write-Host "   現在のディレクトリ: $(Get-Location)"
+          
+          $searchPaths = @(
+            "x64\Debug\sep_color.aex",
+            "..\output\sep_color.aex",
+            "Debug\sep_color.aex",
+            ".\sep_color.aex"
+          )
+          
+          $aexPath = $null
+          foreach ($path in $searchPaths) {
+            if (Test-Path $path) {
+              $aexPath = Get-Item $path
+              Write-Host "✅ ビルド成果物を発見: $($aexPath.FullName)"
+              break
+            }
+          }
+          
+          # 見つからない場合は再帰検索
+          if (-not $aexPath) {
+            Write-Host "🔍 再帰的に検索中..."
+            $aexPath = Get-ChildItem -Path . -Filter "sep_color.aex" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($aexPath) {
+              Write-Host "✅ ビルド成果物を発見: $($aexPath.FullName)"
+            }
+          }
           
           if ($aexPath) {
-            Write-Host "✅ ビルド成功: $($aexPath.FullName)"
-            
             $artifactsDir = "${{ github.workspace }}\artifacts"
             New-Item -ItemType Directory -Path $artifactsDir -Force | Out-Null
             Copy-Item -Path $aexPath.FullName -Destination $artifactsDir -Force
+            Write-Host "✅ アーティファクトをコピーしました: $artifactsDir\sep_color.aex"
           } else {
             Write-Host "❌ ビルド成果物が見つかりません"
-            Get-ChildItem -Recurse | Where-Object { $_.Extension -eq ".aex" } | Format-Table
+            Write-Host "📁 ディレクトリ構造:"
+            Get-ChildItem -Recurse -Depth 3 | Where-Object { $_.Extension -eq ".aex" -or $_.Name -like "*.obj" } | Select-Object FullName | Format-Table -AutoSize
             exit 1
           }
 
