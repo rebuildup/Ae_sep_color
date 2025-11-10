@@ -210,29 +210,36 @@ jobs:
           echo "📄 extractzstd.shの内容:"
           cat extractzstd.sh
           
-          # zstdとtar.zstdファイルの存在確認
-          echo "📁 ファイル確認:"
-          ls -lh zstd ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip 2>&1 || echo "⚠️ 一部ファイルが見つかりません"
-          
           # 実行権限を付与
           echo "🔧 実行権限を付与..."
           chmod +x zstd extractzstd.sh
           
-          # xattrをスキップしてzstd展開を直接実行
-          echo "🔧 zstd展開を直接実行（xattrスキップ）..."
-          if [ -f "zstd" ] && [ -f "ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip" ]; then
-            ./zstd -cd ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip | tar xf - -C .
-            EXTRACT_RESULT=$?
-            echo "展開結果コード: $EXTRACT_RESULT"
-            
-            if [ $EXTRACT_RESULT -ne 0 ]; then
-              echo "⚠️ zstd展開でエラーが発生しましたが続行を試みます"
-            else
-              echo "✅ zstd展開が完了しました"
-            fi
+          # extractzstd.shを実行（xattrエラーは無視）
+          echo "🔧 extractzstd.shを実行してSDKを展開します..."
+          if ./extractzstd.sh 2>&1; then
+            echo "✅ extractzstd.shが正常に完了しました"
           else
-            echo "❌ 必要なファイルが見つかりません"
-            exit 1
+            EXIT_CODE=$?
+            echo "⚠️ extractzstd.shがエラーコード $EXIT_CODE で終了しました"
+            
+            # xattrのエラーの可能性があるため、zstd展開だけ再試行
+            if [ ! -d "ae25.6_61.64bit.AfterEffectsSDK" ]; then
+              echo "🔧 SDKが展開されていないため、zstd展開を直接実行..."
+              if [ -f "zstd" ] && [ -f "ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip" ]; then
+                ./zstd -cd ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip | tar xf - -C .
+                if [ $? -eq 0 ]; then
+                  echo "✅ zstd展開が完了しました"
+                else
+                  echo "❌ zstd展開に失敗しました"
+                  exit 1
+                fi
+              else
+                echo "❌ 必要なファイルが見つかりません"
+                exit 1
+              fi
+            else
+              echo "✅ SDKは既に展開されています（xattrエラーは無視）"
+            fi
           fi
           
           echo "📁 展開後のディレクトリ構造を確認中..."
