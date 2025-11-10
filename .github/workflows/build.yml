@@ -247,7 +247,7 @@ jobs:
           
           # SDKをダウンロード（認証ヘッダーを付ける）
           echo "⬇️  SDKをダウンロード中..."
-          echo "   ダウンロードURL: $DOWNLOAD_URL"
+          echo "   ダウンロードURL: ${BROWSER_DOWNLOAD_URL:-$API_DOWNLOAD_URL}"
           echo "   認証: $([ -n "$GITHUB_TOKEN" ] && echo "あり" || echo "なし")"
           
           # まず認証付きで試す
@@ -303,7 +303,7 @@ jobs:
               echo "❌ SDKのダウンロードに失敗しました"
               echo ""
               echo "デバッグ情報:"
-              echo "  ダウンロードURL: $DOWNLOAD_URL"
+              echo "  ダウンロードURL: ${BROWSER_DOWNLOAD_URL:-$API_DOWNLOAD_URL}"
               echo "  認証付き: HTTP $HTTP_STATUS, exit $CURL_EXIT_CODE"
               echo "  認証なし: HTTP $HTTP_STATUS2, exit $CURL_EXIT_CODE2"
               echo "  トークン設定: $([ -n "$GITHUB_TOKEN" ] && echo "あり (長さ: ${#GITHUB_TOKEN})" || echo "なし")"
@@ -339,13 +339,30 @@ jobs:
             exit 1
           fi
 
+          find_sdk_root() {
+            local depth=$1
+            find "$EXTRACT_DIR" -mindepth 1 -maxdepth "$depth" -type d | while read dir; do
+              if [ -d "$dir/Headers" ] && [ -d "$dir/Util" ]; then
+                echo "$dir"
+                break
+              fi
+            done
+          }
+
+          SDK_ROOT=$(find_sdk_root 4)
+
           find_source_dir() {
             local pattern=$1
             find "$EXTRACT_DIR" -type d -path "$pattern" -print -quit
           }
 
-          HEADERS_SRC=$(find_source_dir "*/AfterEffectsSDK*/Headers")
-          UTIL_SRC=$(find_source_dir "*/AfterEffectsSDK*/Util")
+          if [ -n "$SDK_ROOT" ]; then
+            HEADERS_SRC="$SDK_ROOT/Headers"
+            UTIL_SRC="$SDK_ROOT/Util"
+          else
+            HEADERS_SRC=$(find_source_dir "*/AfterEffectsSDK*/Headers")
+            UTIL_SRC=$(find_source_dir "*/AfterEffectsSDK*/Util")
+          fi
 
           # フォールバック: 最初に見つかったHeaders/Util
           [ -z "$HEADERS_SRC" ] && HEADERS_SRC=$(find "$EXTRACT_DIR" -type d -name "Headers" -print -quit)
@@ -541,21 +558,42 @@ jobs:
             exit 1
           }
 
-          function Get-SdkSubDir([string]$root, [string]$name) {
-            $match = Get-ChildItem -Path $root -Recurse -Directory -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match 'AfterEffectsSDK.*\\' + $name + '$' } |
+          function Get-SdkRoot([string]$root, [int]$depth) {
+            Get-ChildItem -Path $root -Directory -Recurse -Depth $depth -ErrorAction SilentlyContinue |
+              Where-Object {
+                Test-Path (Join-Path $_.FullName "Headers") -and
+                Test-Path (Join-Path $_.FullName "Util")
+              } |
               Select-Object -First 1
-
-            if (-not $match) {
-              $match = Get-ChildItem -Path $root -Recurse -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -ieq $name } |
-                Select-Object -First 1
-            }
-            return $match
           }
 
-          $headersSrc = Get-SdkSubDir -root $extractDir -name "Headers"
-          $utilSrc    = Get-SdkSubDir -root $extractDir -name "Util"
+          $sdkRoot = Get-SdkRoot -root $extractDir -depth 4
+
+          function Get-SdkSubDir([string]$pattern) {
+            Get-ChildItem -Path $extractDir -Directory -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -like $pattern } |
+              Select-Object -ExpandProperty FullName -First 1
+          }
+
+          if ($sdkRoot) {
+            $headersSrc = Join-Path $sdkRoot.FullName "Headers"
+            $utilSrc    = Join-Path $sdkRoot.FullName "Util"
+          } else {
+            $headersSrc = Get-SdkSubDir "*AfterEffectsSDK*\\Headers"
+            $utilSrc    = Get-SdkSubDir "*AfterEffectsSDK*\\Util"
+          }
+
+          if (-not $headersSrc) {
+            $headersSrc = Get-ChildItem -Path $extractDir -Directory -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -ieq "Headers" } |
+              Select-Object -ExpandProperty FullName -First 1
+          }
+
+          if (-not $utilSrc) {
+            $utilSrc = Get-ChildItem -Path $extractDir -Directory -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -ieq "Util" } |
+              Select-Object -ExpandProperty FullName -First 1
+          }
 
           if (-not $headersSrc -or -not $utilSrc) {
             Write-Output "❌ SDK内に Headers/Util が見つかりません"
@@ -566,8 +604,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path $EXPECTED_SDK_PATH | Out-Null
           Remove-Item -Recurse -Force (Join-Path $EXPECTED_SDK_PATH "Headers") -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force (Join-Path $EXPECTED_SDK_PATH "Util") -ErrorAction SilentlyContinue
-          Copy-Item -Recurse -Force $headersSrc.FullName (Join-Path $EXPECTED_SDK_PATH "Headers")
-          Copy-Item -Recurse -Force $utilSrc.FullName (Join-Path $EXPECTED_SDK_PATH "Util")
+          Copy-Item -Recurse -Force $headersSrc (Join-Path $EXPECTED_SDK_PATH "Headers")
+          Copy-Item -Recurse -Force $utilSrc (Join-Path $EXPECTED_SDK_PATH "Util")
           
           # 最終確認
           if ((Test-Path "$EXPECTED_SDK_PATH\Headers") -and (Test-Path "$EXPECTED_SDK_PATH\Util")) {
