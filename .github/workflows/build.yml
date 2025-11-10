@@ -222,53 +222,81 @@ jobs:
             echo "   - $name"
           done
           
-          # アセットの情報を取得（認証が必要な場合はAPIエンドポイントを使用）
+          # アセットの情報を取得
           ASSET_NAME="${{ matrix.sdk_file }}"
-          ASSET_URL=$(echo "$RELEASE_JSON" | grep -A 20 "\"name\":\s*\"$ASSET_NAME\"" | grep -o "\"url\":\s*\"[^\"]*\"" | head -1 | cut -d'"' -f4)
-          BROWSER_DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -A 20 "\"name\":\s*\"$ASSET_NAME\"" | grep -o "\"browser_download_url\":\s*\"[^\"]*\"" | head -1 | cut -d'"' -f4)
           
-          if [ -z "$ASSET_URL" ] && [ -z "$BROWSER_DOWNLOAD_URL" ]; then
+          # JSONからアセット情報を抽出（より確実な方法）
+          ASSET_INFO=$(echo "$RELEASE_JSON" | grep -A 30 "\"name\":\s*\"$ASSET_NAME\"" | head -30)
+          
+          if [ -z "$ASSET_INFO" ]; then
             echo "❌ SDKファイルが見つかりません: $ASSET_NAME"
             echo "利用可能なアセットの一覧:"
             echo "$RELEASE_JSON" | grep -o '"name":"[^"]*"' | head -10
             exit 1
           fi
           
-          # 認証が必要な場合はAPIエンドポイントを使用、そうでない場合はbrowser_download_urlを使用
-          if [ -n "$ASSET_URL" ]; then
-            DOWNLOAD_URL="$ASSET_URL"
-            echo "📥 APIエンドポイントを使用: $DOWNLOAD_URL"
-          else
-            DOWNLOAD_URL="$BROWSER_DOWNLOAD_URL"
-            echo "📥 ブラウザダウンロードURLを使用: $DOWNLOAD_URL"
+          # browser_download_urlを取得
+          DOWNLOAD_URL=$(echo "$ASSET_INFO" | grep -o "\"browser_download_url\":\s*\"[^\"]*\"" | head -1 | cut -d'"' -f4)
+          
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "❌ ダウンロードURLが見つかりません: $ASSET_NAME"
+            echo "アセット情報:"
+            echo "$ASSET_INFO" | head -20
+            exit 1
           fi
           
-          # SDKをダウンロード
+          echo "📥 ダウンロードURL: $DOWNLOAD_URL"
+          
+          # SDKをダウンロード（認証ヘッダーを付ける）
           echo "⬇️  SDKをダウンロード中..."
-          DOWNLOAD_RESPONSE=$(curl -L -w "\nHTTP_STATUS:%{http_code}\n" \
+          DOWNLOAD_RESPONSE=$(curl -L -f -w "\nHTTP_STATUS:%{http_code}\n" \
                -H "Authorization: token $GITHUB_TOKEN" \
                -H "Accept: application/octet-stream" \
+               -H "User-Agent: GitHub-Actions" \
                -o AE_SDK.zip "$DOWNLOAD_URL" 2>&1)
           
-          HTTP_STATUS=$(echo "$DOWNLOAD_RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
-          CURL_ERROR=$(echo "$DOWNLOAD_RESPONSE" | grep -v "HTTP_STATUS:" | tail -5)
+          CURL_EXIT_CODE=$?
+          HTTP_STATUS=$(echo "$DOWNLOAD_RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
+          CURL_ERROR=$(echo "$DOWNLOAD_RESPONSE" | grep -v "HTTP_STATUS:" | tail -10)
           
           echo "📊 HTTPステータス: $HTTP_STATUS"
+          echo "📊 curl終了コード: $CURL_EXIT_CODE"
           
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "❌ SDKのダウンロードに失敗しました (HTTP $HTTP_STATUS)"
+          if [ "$CURL_EXIT_CODE" != "0" ] || [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ SDKのダウンロードに失敗しました"
+            echo "HTTPステータス: $HTTP_STATUS"
+            echo "curl終了コード: $CURL_EXIT_CODE"
+            echo ""
             echo "エラー詳細:"
             echo "$CURL_ERROR"
             echo ""
             echo "デバッグ情報:"
             echo "  ダウンロードURL: $DOWNLOAD_URL"
-            echo "  トークン設定: $([ -n "$GITHUB_TOKEN" ] && echo "あり" || echo "なし")"
+            echo "  トークン設定: $([ -n "$GITHUB_TOKEN" ] && echo "あり (長さ: ${#GITHUB_TOKEN})" || echo "なし")"
             echo ""
             echo "考えられる原因:"
             echo "  1. GitHub Personal Access Token (PAT) の権限が不足している"
             echo "  2. プライベートリポジトリへのアクセス権限がない"
             echo "  3. トークンが期限切れまたは無効"
-            exit 1
+            echo "  4. ダウンロードURLが無効またはアクセスできない"
+            echo ""
+            echo "試行: 認証なしでダウンロードを試みます..."
+            
+            # 認証なしで試す（パブリックリポジトリの場合）
+            DOWNLOAD_RESPONSE2=$(curl -L -f -w "\nHTTP_STATUS:%{http_code}\n" \
+                 -H "Accept: application/octet-stream" \
+                 -H "User-Agent: GitHub-Actions" \
+                 -o AE_SDK.zip "$DOWNLOAD_URL" 2>&1)
+            
+            CURL_EXIT_CODE2=$?
+            HTTP_STATUS2=$(echo "$DOWNLOAD_RESPONSE2" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
+            
+            if [ "$CURL_EXIT_CODE2" == "0" ] && [ "$HTTP_STATUS2" == "200" ]; then
+              echo "✅ 認証なしでダウンロード成功"
+            else
+              echo "❌ 認証なしでもダウンロードに失敗しました (HTTP $HTTP_STATUS2)"
+              exit 1
+            fi
           fi
           
           # ダウンロードしたファイルの確認
@@ -779,53 +807,81 @@ jobs:
             exit 1
           fi
           
-          # アセットの情報を取得（認証が必要な場合はAPIエンドポイントを使用）
+          # アセットの情報を取得
           ASSET_NAME="${{ matrix.sdk_file }}"
-          ASSET_URL=$(echo "$RELEASE_JSON" | grep -A 20 "\"name\":\s*\"$ASSET_NAME\"" | grep -o "\"url\":\s*\"[^\"]*\"" | head -1 | cut -d'"' -f4)
-          BROWSER_DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -A 20 "\"name\":\s*\"$ASSET_NAME\"" | grep -o "\"browser_download_url\":\s*\"[^\"]*\"" | head -1 | cut -d'"' -f4)
           
-          if [ -z "$ASSET_URL" ] && [ -z "$BROWSER_DOWNLOAD_URL" ]; then
+          # JSONからアセット情報を抽出（より確実な方法）
+          ASSET_INFO=$(echo "$RELEASE_JSON" | grep -A 30 "\"name\":\s*\"$ASSET_NAME\"" | head -30)
+          
+          if [ -z "$ASSET_INFO" ]; then
             echo "❌ SDKファイルが見つかりません: $ASSET_NAME"
             echo "利用可能なアセットの一覧:"
             echo "$RELEASE_JSON" | grep -o '"name":"[^"]*"' | head -10
             exit 1
           fi
           
-          # 認証が必要な場合はAPIエンドポイントを使用、そうでない場合はbrowser_download_urlを使用
-          if [ -n "$ASSET_URL" ]; then
-            DOWNLOAD_URL="$ASSET_URL"
-            echo "📥 APIエンドポイントを使用: $DOWNLOAD_URL"
-          else
-            DOWNLOAD_URL="$BROWSER_DOWNLOAD_URL"
-            echo "📥 ブラウザダウンロードURLを使用: $DOWNLOAD_URL"
+          # browser_download_urlを取得
+          DOWNLOAD_URL=$(echo "$ASSET_INFO" | grep -o "\"browser_download_url\":\s*\"[^\"]*\"" | head -1 | cut -d'"' -f4)
+          
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "❌ ダウンロードURLが見つかりません: $ASSET_NAME"
+            echo "アセット情報:"
+            echo "$ASSET_INFO" | head -20
+            exit 1
           fi
           
-          # SDKをダウンロード
+          echo "📥 ダウンロードURL: $DOWNLOAD_URL"
+          
+          # SDKをダウンロード（認証ヘッダーを付ける）
           echo "⬇️  SDKをダウンロード中..."
-          DOWNLOAD_RESPONSE=$(curl -L -w "\nHTTP_STATUS:%{http_code}\n" \
+          DOWNLOAD_RESPONSE=$(curl -L -f -w "\nHTTP_STATUS:%{http_code}\n" \
                -H "Authorization: token $GITHUB_TOKEN" \
                -H "Accept: application/octet-stream" \
+               -H "User-Agent: GitHub-Actions" \
                -o AE_SDK.zip "$DOWNLOAD_URL" 2>&1)
           
-          HTTP_STATUS=$(echo "$DOWNLOAD_RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
-          CURL_ERROR=$(echo "$DOWNLOAD_RESPONSE" | grep -v "HTTP_STATUS:" | tail -5)
+          CURL_EXIT_CODE=$?
+          HTTP_STATUS=$(echo "$DOWNLOAD_RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
+          CURL_ERROR=$(echo "$DOWNLOAD_RESPONSE" | grep -v "HTTP_STATUS:" | tail -10)
           
           echo "📊 HTTPステータス: $HTTP_STATUS"
+          echo "📊 curl終了コード: $CURL_EXIT_CODE"
           
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "❌ SDKのダウンロードに失敗しました (HTTP $HTTP_STATUS)"
+          if [ "$CURL_EXIT_CODE" != "0" ] || [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ SDKのダウンロードに失敗しました"
+            echo "HTTPステータス: $HTTP_STATUS"
+            echo "curl終了コード: $CURL_EXIT_CODE"
+            echo ""
             echo "エラー詳細:"
             echo "$CURL_ERROR"
             echo ""
             echo "デバッグ情報:"
             echo "  ダウンロードURL: $DOWNLOAD_URL"
-            echo "  トークン設定: $([ -n "$GITHUB_TOKEN" ] && echo "あり" || echo "なし")"
+            echo "  トークン設定: $([ -n "$GITHUB_TOKEN" ] && echo "あり (長さ: ${#GITHUB_TOKEN})" || echo "なし")"
             echo ""
             echo "考えられる原因:"
             echo "  1. GitHub Personal Access Token (PAT) の権限が不足している"
             echo "  2. プライベートリポジトリへのアクセス権限がない"
             echo "  3. トークンが期限切れまたは無効"
-            exit 1
+            echo "  4. ダウンロードURLが無効またはアクセスできない"
+            echo ""
+            echo "試行: 認証なしでダウンロードを試みます..."
+            
+            # 認証なしで試す（パブリックリポジトリの場合）
+            DOWNLOAD_RESPONSE2=$(curl -L -f -w "\nHTTP_STATUS:%{http_code}\n" \
+                 -H "Accept: application/octet-stream" \
+                 -H "User-Agent: GitHub-Actions" \
+                 -o AE_SDK.zip "$DOWNLOAD_URL" 2>&1)
+            
+            CURL_EXIT_CODE2=$?
+            HTTP_STATUS2=$(echo "$DOWNLOAD_RESPONSE2" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
+            
+            if [ "$CURL_EXIT_CODE2" == "0" ] && [ "$HTTP_STATUS2" == "200" ]; then
+              echo "✅ 認証なしでダウンロード成功"
+            else
+              echo "❌ 認証なしでもダウンロードに失敗しました (HTTP $HTTP_STATUS2)"
+              exit 1
+            fi
           fi
           
           if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
