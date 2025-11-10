@@ -552,12 +552,26 @@ jobs:
       - name: Build Xcode Project (Unsigned)
         if: matrix.platform == 'mac'
         run: |
+          set -e  # エラー時に即座に終了
+          
           PROJECT_DIR="${{ steps.project_path.outputs.project_dir }}"
           BUILD_DIR="${{ steps.project_path.outputs.build_dir }}"
           
+          echo "📁 プロジェクトディレクトリ: $PROJECT_DIR"
+          echo "📁 ビルドディレクトリ: $BUILD_DIR"
+          
           cd "$BUILD_DIR"
           
-          xcodebuild build \
+          # プロジェクトファイルの確認
+          if [ ! -f "sep_color.xcodeproj/project.pbxproj" ]; then
+            echo "❌ Xcodeプロジェクトファイルが見つかりません: $BUILD_DIR/sep_color.xcodeproj"
+            exit 1
+          fi
+          
+          echo "🔨 Xcodeビルドを開始します..."
+          
+          # xcodebuildを実行（エラーメッセージを表示）
+          if ! xcodebuild build \
             -project sep_color.xcodeproj \
             -target sep_color \
             -configuration Debug \
@@ -568,16 +582,33 @@ jobs:
             CONFIGURATION_BUILD_DIR="$(pwd)/build" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild.log; then
+            echo "❌ Xcodeビルドに失敗しました"
+            echo ""
+            echo "ビルドログの最後の50行:"
+            tail -50 xcodebuild.log || true
+            echo ""
+            echo "エラーメッセージ:"
+            grep -i "error" xcodebuild.log | tail -20 || true
+            exit 1
+          fi
+          
+          echo "✅ Xcodeビルドが完了しました"
           
           # ビルド成果物の確認
           echo "📦 ビルド成果物を検索:"
           PLUGIN_PATH=$(find build -name "sep_color.plugin" -type d 2>/dev/null | head -1)
           if [ -n "$PLUGIN_PATH" ]; then
             echo "✅ ビルド成果物が見つかりました: $PLUGIN_PATH"
+            echo "📊 ファイルサイズ: $(du -h "$PLUGIN_PATH" | cut -f1)"
           else
             echo "⚠️  ビルド成果物が見つかりませんでした"
+            echo "検索パス: $BUILD_DIR/build"
             find build -type d -name "*.plugin" 2>/dev/null || true
+            echo ""
+            echo "ビルドディレクトリの内容:"
+            ls -la build 2>/dev/null || true
+            exit 1
           fi
 
       # 8. Windows用: MSBuildビルドの実行
