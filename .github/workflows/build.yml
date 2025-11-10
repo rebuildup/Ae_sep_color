@@ -455,12 +455,12 @@ jobs:
             done
           }
 
-          extract_nested_archives
+          run_extract_scripts "$EXTRACT_DIR"
 
           locate_sources_in_dir "$EXTRACT_DIR" || true
 
           if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
-            run_extract_scripts "$EXTRACT_DIR"
+            extract_nested_archives
             locate_sources_in_dir "$EXTRACT_DIR" || true
           fi
 
