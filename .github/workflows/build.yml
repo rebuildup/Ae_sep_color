@@ -383,15 +383,24 @@ jobs:
           $env:AE_PLUGIN_BUILD_DIR = $pluginBuildDir
           Write-Host "🔧 AE_PLUGIN_BUILD_DIR を設定: $pluginBuildDir"
           
-          Set-Location $env:SDK_ROOT
+          # SDK_ROOT は Examples ディレクトリなので、親に移動
+          $sdkParent = Split-Path $env:SDK_ROOT -Parent
+          Write-Host "📁 SDK親ディレクトリ: $sdkParent"
+          Set-Location $sdkParent
           
-          # BuildAll.sln を探す
+          # BuildAll.sln を探す（親ディレクトリまたはExamplesディレクトリ内）
           $buildSln = $null
+          $buildSlnPath = $null
+          
           if (Test-Path "BuildAll.sln") {
             $buildSln = "BuildAll.sln"
+            $buildSlnPath = $sdkParent
+            Write-Host "✅ BuildAll.sln を発見: $buildSlnPath\$buildSln"
           } elseif (Test-Path "Examples\BuildAll.sln") {
             Set-Location Examples
             $buildSln = "BuildAll.sln"
+            $buildSlnPath = "$sdkParent\Examples"
+            Write-Host "✅ BuildAll.sln を発見: $buildSlnPath\$buildSln"
           }
           
           if ($buildSln) {
@@ -418,6 +427,7 @@ jobs:
             }
           } else {
             Write-Host "⚠️ BuildAll.sln が見つかりません（スキップ）"
+            Write-Host "   検索場所: $sdkParent"
           }
 
       # ==================== プラグインをSDK/Examples/Templateにコピー ====================
