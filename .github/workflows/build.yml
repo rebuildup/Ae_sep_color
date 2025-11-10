@@ -123,6 +123,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
         run: |
+          set -e  # エラー時に即座に終了
+          
           EXPECTED_SDK_PATH="${{ steps.project_path.outputs.expected_sdk_path }}"
           
           # AeSDKが既に存在するか確認
@@ -140,41 +142,108 @@ jobs:
           echo "   リリースタグ: $RELEASE_TAG"
           echo "   SDKファイル: ${{ matrix.sdk_file }}"
           
-          # リリース情報を取得
-          RELEASE_JSON=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG")
+          # トークンの確認
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "❌ GITHUB_TOKENが設定されていません"
+            echo "   GitHub Secretsに AE_SDK_DOWNLOAD_TOKEN を設定してください"
+            exit 1
+          fi
+          
+          # リリース情報を取得（エラーハンドリングを改善）
+          echo "🔍 リリース情報を取得中..."
+          RELEASE_JSON=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" 2>&1)
+          
+          HTTP_STATUS=$(echo "$RELEASE_JSON" | grep "HTTP_STATUS:" | cut -d: -f2)
+          RELEASE_JSON=$(echo "$RELEASE_JSON" | sed '/HTTP_STATUS:/d')
+          
+          echo "📊 HTTPステータス: $HTTP_STATUS"
+          
+          # タグが見つからない場合、最新リリースを試す
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "⚠️  指定されたタグが見つかりません。最新リリースを取得します..."
+            RELEASE_JSON=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/$REPO/releases/latest" 2>&1)
+            
+            HTTP_STATUS=$(echo "$RELEASE_JSON" | grep "HTTP_STATUS:" | cut -d: -f2)
+            RELEASE_JSON=$(echo "$RELEASE_JSON" | sed '/HTTP_STATUS:/d')
+            
+            if [ "$HTTP_STATUS" == "200" ]; then
+              ACTUAL_TAG=$(echo "$RELEASE_JSON" | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+              echo "✅ 最新リリースを見つけました: $ACTUAL_TAG"
+            fi
+          fi
+          
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ リリース情報の取得に失敗しました (HTTP $HTTP_STATUS)"
+            echo "レスポンス:"
+            echo "$RELEASE_JSON" | head -20
+            echo ""
+            echo "考えられる原因:"
+            echo "  1. リポジトリが存在しない、またはプライベートリポジトリでアクセス権限がない"
+            echo "  2. リリースタグ '$RELEASE_TAG' が存在しない"
+            echo "  3. GitHub Personal Access Token (PAT) の権限が不足している"
+            echo "  4. AE_SDK_DOWNLOAD_TOKEN が正しく設定されていない"
+            exit 1
+          fi
           
           if [ -z "$RELEASE_JSON" ] || echo "$RELEASE_JSON" | grep -q '"message":"Not Found"'; then
             echo "❌ リリースが見つかりません: $RELEASE_TAG"
+            echo "レスポンス:"
+            echo "$RELEASE_JSON" | head -20
             exit 1
           fi
+          
+          # アセットの一覧を表示（デバッグ用）
+          echo "📋 利用可能なアセット:"
+          echo "$RELEASE_JSON" | grep -o '"name":"[^"]*"' | head -10 | sed 's/"name":"//g' | sed 's/"//g' | while read name; do
+            echo "   - $name"
+          done
           
           # アセットのダウンロードURLを取得
           DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -o "\"browser_download_url\":\s*\"[^\"]*${{ matrix.sdk_file }}[^\"]*\"" | head -1 | cut -d'"' -f4)
           
           if [ -z "$DOWNLOAD_URL" ]; then
             echo "❌ SDKファイルが見つかりません: ${{ matrix.sdk_file }}"
-            echo "利用可能なアセット:"
-            echo "$RELEASE_JSON" | grep -o "\"name\":\s*\"[^\"]*\"" | head -5
+            echo "利用可能なアセットの一覧:"
+            echo "$RELEASE_JSON" | grep -o '"name":"[^"]*"' | head -10
             exit 1
           fi
           
           echo "📥 ダウンロードURL: $DOWNLOAD_URL"
           
           # SDKをダウンロード
-          curl -L -H "Authorization: token $GITHUB_TOKEN" \
+          echo "⬇️  SDKをダウンロード中..."
+          HTTP_STATUS=$(curl -L -w "\nHTTP_STATUS:%{http_code}" \
+               -H "Authorization: token $GITHUB_TOKEN" \
                -H "Accept: application/octet-stream" \
-               -o AE_SDK.zip "$DOWNLOAD_URL" || {
-            echo "❌ SDKのダウンロードに失敗しました"
+               -o AE_SDK.zip "$DOWNLOAD_URL" 2>&1 | grep "HTTP_STATUS:" | cut -d: -f2)
+          
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ SDKのダウンロードに失敗しました (HTTP $HTTP_STATUS)"
             exit 1
-          }
+          fi
+          
+          # ダウンロードしたファイルの確認
+          if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
+            echo "❌ ダウンロードしたファイルが無効です"
+            exit 1
+          fi
+          
+          echo "✅ ダウンロード完了 ($(du -h AE_SDK.zip | cut -f1))"
           
           # 親ディレクトリ構造を作成
           mkdir -p "$(dirname "$EXPECTED_SDK_PATH")"
           
           # SDKを展開
+          echo "📦 SDKを展開中..."
           unzip -q AE_SDK.zip -d "$(dirname "$EXPECTED_SDK_PATH")" || {
             # ZIPのルートにSDKがある場合
+            echo "⚠️  最初の展開に失敗。別の方法で展開を試みます..."
             unzip -q AE_SDK.zip
             if [ -d "Adobe-AE-SDK" ]; then
               mv Adobe-AE-SDK "$EXPECTED_SDK_PATH"
@@ -194,8 +263,18 @@ jobs:
           if [ -d "$EXPECTED_SDK_PATH/Headers" ] && [ -d "$EXPECTED_SDK_PATH/Util" ]; then
             echo "✅ AeSDKのセットアップが完了しました"
             echo "📁 AeSDKパス: $EXPECTED_SDK_PATH"
+            echo "📁 Headers: $EXPECTED_SDK_PATH/Headers ($(ls -1 "$EXPECTED_SDK_PATH/Headers" | wc -l | xargs) ファイル)"
+            echo "📁 Util: $EXPECTED_SDK_PATH/Util ($(ls -1 "$EXPECTED_SDK_PATH/Util" | wc -l | xargs) ファイル)"
           else
             echo "❌ AeSDKのセットアップに失敗しました"
+            echo "想定パス: $EXPECTED_SDK_PATH"
+            echo "存在確認:"
+            [ -d "$EXPECTED_SDK_PATH" ] && echo "  - ディレクトリは存在します" || echo "  - ディレクトリが存在しません"
+            [ -d "$EXPECTED_SDK_PATH/Headers" ] && echo "  - Headers/ は存在します" || echo "  - Headers/ が存在しません"
+            [ -d "$EXPECTED_SDK_PATH/Util" ] && echo "  - Util/ は存在します" || echo "  - Util/ が存在しません"
+            echo ""
+            echo "展開されたファイル:"
+            ls -la "$(dirname "$EXPECTED_SDK_PATH")" | head -20
             exit 1
           fi
 
@@ -206,6 +285,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
         shell: powershell
         run: |
+          $ErrorActionPreference = "Stop"
+          
           $EXPECTED_SDK_PATH = "${{ steps.project_path.outputs.expected_sdk_path }}"
           
           # AeSDKが既に存在するか確認
@@ -223,35 +304,88 @@ jobs:
           Write-Output "   リリースタグ: $RELEASE_TAG"
           Write-Output "   SDKファイル: ${{ matrix.sdk_file }}"
           
+          # トークンの確認
+          if (-not $env:GITHUB_TOKEN) {
+            Write-Output "❌ GITHUB_TOKENが設定されていません"
+            Write-Output "   GitHub Secretsに AE_SDK_DOWNLOAD_TOKEN を設定してください"
+            exit 1
+          }
+          
           # リリース情報を取得
+          Write-Output "🔍 リリース情報を取得中..."
           $headers = @{
             Authorization = "token $env:GITHUB_TOKEN"
+            Accept = "application/vnd.github.v3+json"
           }
           $releaseUrl = "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"
-          $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers
+          
+          try {
+            $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -ErrorAction Stop
+          } catch {
+            Write-Output "❌ リリース情報の取得に失敗しました"
+            Write-Output "HTTPステータス: $($_.Exception.Response.StatusCode.value__)"
+            Write-Output "エラーメッセージ: $($_.Exception.Message)"
+            exit 1
+          }
+          
+          # アセットの一覧を表示（デバッグ用）
+          Write-Output "📋 利用可能なアセット:"
+          $releaseJson.assets | ForEach-Object { Write-Output "   - $($_.name)" }
           
           # アセットのダウンロードURLを取得
           $downloadUrl = ($releaseJson.assets | Where-Object { $_.name -eq "${{ matrix.sdk_file }}" }).browser_download_url
           
           if (-not $downloadUrl) {
             Write-Output "❌ SDKファイルが見つかりません: ${{ matrix.sdk_file }}"
-            Write-Output "利用可能なアセット:"
-            $releaseJson.assets | ForEach-Object { Write-Output "  - $($_.name)" }
+            Write-Output "利用可能なアセットの一覧:"
+            $releaseJson.assets | ForEach-Object { Write-Output "   - $($_.name)" }
             exit 1
           }
           
           Write-Output "📥 ダウンロードURL: $downloadUrl"
           
           # SDKをダウンロード
+          Write-Output "⬇️  SDKをダウンロード中..."
           $outputPath = "AE_SDK.zip"
-          Invoke-WebRequest -Uri $downloadUrl -Headers $headers -OutFile $outputPath
+          try {
+            Invoke-WebRequest -Uri $downloadUrl -Headers $headers -OutFile $outputPath -ErrorAction Stop
+          } catch {
+            Write-Output "❌ SDKのダウンロードに失敗しました"
+            Write-Output "HTTPステータス: $($_.Exception.Response.StatusCode.value__)"
+            Write-Output "エラーメッセージ: $($_.Exception.Message)"
+            exit 1
+          }
+          
+          # ダウンロードしたファイルの確認
+          if (-not (Test-Path $outputPath) -or (Get-Item $outputPath).Length -eq 0) {
+            Write-Output "❌ ダウンロードしたファイルが無効です"
+            exit 1
+          }
+          
+          $fileSize = (Get-Item $outputPath).Length / 1MB
+          Write-Output "✅ ダウンロード完了 ($([math]::Round($fileSize, 2)) MB)"
           
           # 親ディレクトリ構造を作成
           $parentDir = Split-Path -Parent $EXPECTED_SDK_PATH
           New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
           
           # SDKを展開
-          Expand-Archive -Path $outputPath -DestinationPath $parentDir -Force
+          Write-Output "📦 SDKを展開中..."
+          try {
+            Expand-Archive -Path $outputPath -DestinationPath $parentDir -Force -ErrorAction Stop
+          } catch {
+            Write-Output "⚠️  最初の展開に失敗。別の方法で展開を試みます..."
+            Expand-Archive -Path $outputPath -DestinationPath "." -Force
+            if (Test-Path "Adobe-AE-SDK") {
+              Move-Item "Adobe-AE-SDK" $EXPECTED_SDK_PATH -Force
+            } elseif (Test-Path "SDK") {
+              Move-Item "SDK" $EXPECTED_SDK_PATH -Force
+            } elseif ((Test-Path "Headers") -or (Test-Path "Util")) {
+              New-Item -ItemType Directory -Force -Path $EXPECTED_SDK_PATH | Out-Null
+              if (Test-Path "Headers") { Move-Item "Headers" $EXPECTED_SDK_PATH -Force }
+              if (Test-Path "Util") { Move-Item "Util" $EXPECTED_SDK_PATH -Force }
+            }
+          }
           
           # ZIPのルートにSDKがある場合の処理
           if (Test-Path "$parentDir\Adobe-AE-SDK") {
@@ -265,16 +399,28 @@ jobs:
           }
           
           # クリーンアップ
-          Remove-Item $outputPath -Force
+          Remove-Item $outputPath -Force -ErrorAction SilentlyContinue
           
           # 最終確認
           if ((Test-Path "$EXPECTED_SDK_PATH\Headers") -and (Test-Path "$EXPECTED_SDK_PATH\Util")) {
+            $headerCount = (Get-ChildItem "$EXPECTED_SDK_PATH\Headers" -File | Measure-Object).Count
+            $utilCount = (Get-ChildItem "$EXPECTED_SDK_PATH\Util" -File | Measure-Object).Count
             Write-Output "✅ AeSDKのセットアップが完了しました"
             Write-Output "📁 AeSDKパス: $EXPECTED_SDK_PATH"
+            Write-Output "📁 Headers: $EXPECTED_SDK_PATH\Headers ($headerCount ファイル)"
+            Write-Output "📁 Util: $EXPECTED_SDK_PATH\Util ($utilCount ファイル)"
           } else {
             Write-Output "❌ AeSDKのセットアップに失敗しました"
+            Write-Output "想定パス: $EXPECTED_SDK_PATH"
+            Write-Output "存在確認:"
+            if (Test-Path "$EXPECTED_SDK_PATH") { Write-Output "  - ディレクトリは存在します" } else { Write-Output "  - ディレクトリが存在しません" }
+            if (Test-Path "$EXPECTED_SDK_PATH\Headers") { Write-Output "  - Headers\ は存在します" } else { Write-Output "  - Headers\ が存在しません" }
+            if (Test-Path "$EXPECTED_SDK_PATH\Util") { Write-Output "  - Util\ は存在します" } else { Write-Output "  - Util\ が存在しません" }
+            Write-Output ""
+            Write-Output "展開されたファイル:"
+            Get-ChildItem $parentDir | Select-Object -First 20 | Format-Table Name, Length, LastWriteTime
             exit 1
-          fi
+          }
 
       # 7. Mac用: Xcodeビルドの実行
       - name: Build Xcode Project (Unsigned)
@@ -481,6 +627,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
         run: |
+          set -e  # エラー時に即座に終了
+          
           EXPECTED_SDK_PATH="${{ steps.project_path.outputs.expected_sdk_path }}"
           
           if [ -d "$EXPECTED_SDK_PATH/Headers" ] && [ -d "$EXPECTED_SDK_PATH/Util" ]; then
@@ -491,21 +639,66 @@ jobs:
           RELEASE_TAG="ae-sdk_25.6_61"
           REPO="rebuildup/my-ae-sdk-storage"
           
-          RELEASE_JSON=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG")
+          echo "📦 GitHubリリースからAeSDKをダウンロードします"
+          echo "   リポジトリ: $REPO"
+          echo "   リリースタグ: $RELEASE_TAG"
+          echo "   SDKファイル: ${{ matrix.sdk_file }}"
           
+          # トークンの確認
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "❌ GITHUB_TOKENが設定されていません"
+            exit 1
+          fi
+          
+          # リリース情報を取得
+          echo "🔍 リリース情報を取得中..."
+          RELEASE_JSON=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" 2>&1)
+          
+          HTTP_STATUS=$(echo "$RELEASE_JSON" | grep "HTTP_STATUS:" | cut -d: -f2)
+          RELEASE_JSON=$(echo "$RELEASE_JSON" | sed '/HTTP_STATUS:/d')
+          
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ リリース情報の取得に失敗しました (HTTP $HTTP_STATUS)"
+            echo "$RELEASE_JSON" | head -20
+            exit 1
+          fi
+          
+          # アセットのダウンロードURLを取得
           DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -o "\"browser_download_url\":\s*\"[^\"]*${{ matrix.sdk_file }}[^\"]*\"" | head -1 | cut -d'"' -f4)
           
           if [ -z "$DOWNLOAD_URL" ]; then
             echo "❌ SDKファイルが見つかりません: ${{ matrix.sdk_file }}"
+            echo "利用可能なアセット:"
+            echo "$RELEASE_JSON" | grep -o '"name":"[^"]*"' | head -10
             exit 1
           fi
           
-          curl -L -H "Authorization: token $GITHUB_TOKEN" \
+          echo "📥 ダウンロードURL: $DOWNLOAD_URL"
+          
+          # SDKをダウンロード
+          echo "⬇️  SDKをダウンロード中..."
+          HTTP_STATUS=$(curl -L -w "\nHTTP_STATUS:%{http_code}" \
+               -H "Authorization: token $GITHUB_TOKEN" \
                -H "Accept: application/octet-stream" \
-               -o AE_SDK.zip "$DOWNLOAD_URL" || exit 1
+               -o AE_SDK.zip "$DOWNLOAD_URL" 2>&1 | grep "HTTP_STATUS:" | cut -d: -f2)
+          
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ SDKのダウンロードに失敗しました (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
+          
+          if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
+            echo "❌ ダウンロードしたファイルが無効です"
+            exit 1
+          fi
+          
+          echo "✅ ダウンロード完了 ($(du -h AE_SDK.zip | cut -f1))"
           
           mkdir -p "$(dirname "$EXPECTED_SDK_PATH")"
+          echo "📦 SDKを展開中..."
           unzip -q AE_SDK.zip -d "$(dirname "$EXPECTED_SDK_PATH")" || {
             unzip -q AE_SDK.zip
             [ -d "Adobe-AE-SDK" ] && mv Adobe-AE-SDK "$EXPECTED_SDK_PATH" || \
@@ -518,6 +711,8 @@ jobs:
             echo "❌ AeSDKのセットアップに失敗しました"
             exit 1
           fi
+          
+          echo "✅ AeSDKのセットアップが完了しました"
 
       - name: Download AE SDK from GitHub Release (Windows)
         if: matrix.platform == 'win'
