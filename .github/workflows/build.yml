@@ -1,0 +1,676 @@
+name: Build After Effects Plugin
+
+on:
+  # プルリクエスト (main/master/developブランチ対象) でトリガー
+  pull_request:
+    branches: [ main, master, develop ]
+  
+  # 'v'で始まるタグ (例: v1.0.0) がプッシュされた時にトリガー
+  push:
+    branches: [ main, master, develop ]
+    tags:
+      - 'v*'
+  
+  # 手動実行
+  workflow_dispatch:
+
+jobs:
+  # ============================================
+  # ジョブ1: ビルドとテスト (署名なし)
+  # プルリクエストの検証用 - Mac/Windows両方
+  # ============================================
+  build-test:
+    name: Build and Test (Unsigned)
+    strategy:
+      matrix:
+        os: [macos-14, windows-latest]
+        include:
+          - os: macos-14
+            sdk_file: AfterEffectsSDK_25.6_61_mac.zip
+            platform: mac
+          - os: windows-latest
+            sdk_file: AfterEffectsSDK_25.6_61_win.zip
+            platform: win
+    
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      # 1. コードのチェックアウト
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      # 2. Mac用: Xcodeバージョンの設定
+      - name: Set up Xcode
+        if: matrix.platform == 'mac'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.2'
+
+      # 3. Mac用: Xcodeライセンスの同意
+      - name: Accept Xcode license
+        if: matrix.platform == 'mac'
+        run: sudo xcodebuild -license accept
+
+      # 4. Windows用: Visual Studio セットアップ
+      - name: Set up MSBuild
+        if: matrix.platform == 'win'
+        uses: microsoft/setup-msbuild@v2
+
+      # 5. Mac用: プロジェクトパスの確認
+      - name: Determine project path (Mac)
+        if: matrix.platform == 'mac'
+        id: project_path_mac
+        run: |
+          REPO_ROOT="$(pwd)"
+          PROJECT_DIR="$REPO_ROOT"
+          
+          if [ -d "Template/sep_color" ]; then
+            PROJECT_DIR="$REPO_ROOT/Template/sep_color"
+          elif [ -d "sep_color" ]; then
+            PROJECT_DIR="$REPO_ROOT/sep_color"
+          fi
+          
+          BUILD_DIR="$PROJECT_DIR/Mac"
+          EXPECTED_SDK_PATH="$(cd "$BUILD_DIR" && cd ../../.. && pwd)"
+          
+          echo "project_dir=$PROJECT_DIR" >> $GITHUB_OUTPUT
+          echo "build_dir=$BUILD_DIR" >> $GITHUB_OUTPUT
+          echo "expected_sdk_path=$EXPECTED_SDK_PATH" >> $GITHUB_OUTPUT
+
+      # 5. Windows用: プロジェクトパスの確認
+      - name: Determine project path (Windows)
+        if: matrix.platform == 'win'
+        id: project_path_win
+        shell: powershell
+        run: |
+          $REPO_ROOT = Get-Location
+          $PROJECT_DIR = $REPO_ROOT
+          
+          if (Test-Path "Template\sep_color") {
+            $PROJECT_DIR = Join-Path $REPO_ROOT "Template\sep_color"
+          } elseif (Test-Path "sep_color") {
+            $PROJECT_DIR = Join-Path $REPO_ROOT "sep_color"
+          }
+          
+          $BUILD_DIR = Join-Path $PROJECT_DIR "Win"
+          $EXPECTED_SDK_PATH = (Get-Item (Join-Path $BUILD_DIR "..\..\..")).FullName
+          
+          Write-Output "project_dir=$PROJECT_DIR" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Output "build_dir=$BUILD_DIR" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Output "expected_sdk_path=$EXPECTED_SDK_PATH" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # 5.5. プロジェクトパスを統合
+      - name: Set project path outputs
+        id: project_path
+        run: |
+          if [ "${{ matrix.platform }}" == "mac" ]; then
+            echo "project_dir=${{ steps.project_path_mac.outputs.project_dir }}" >> $GITHUB_OUTPUT
+            echo "build_dir=${{ steps.project_path_mac.outputs.build_dir }}" >> $GITHUB_OUTPUT
+            echo "expected_sdk_path=${{ steps.project_path_mac.outputs.expected_sdk_path }}" >> $GITHUB_OUTPUT
+          else
+            echo "project_dir=${{ steps.project_path_win.outputs.project_dir }}" >> $GITHUB_OUTPUT
+            echo "build_dir=${{ steps.project_path_win.outputs.build_dir }}" >> $GITHUB_OUTPUT
+            echo "expected_sdk_path=${{ steps.project_path_win.outputs.expected_sdk_path }}" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      # 6. Mac用: GitHubリリースからAE SDKをダウンロード
+      - name: Download AE SDK from GitHub Release (Mac)
+        if: matrix.platform == 'mac'
+        env:
+          GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
+        run: |
+          EXPECTED_SDK_PATH="${{ steps.project_path.outputs.expected_sdk_path }}"
+          
+          # AeSDKが既に存在するか確認
+          if [ -d "$EXPECTED_SDK_PATH/Headers" ] && [ -d "$EXPECTED_SDK_PATH/Util" ]; then
+            echo "✅ AeSDKが既に存在します: $EXPECTED_SDK_PATH"
+            exit 0
+          fi
+          
+          # GitHub APIを使用してリリース情報を取得
+          RELEASE_TAG="ae-sdk_25.6_61"
+          REPO="rebuildup/my-ae-sdk-storage"
+          
+          echo "📦 GitHubリリースからAeSDKをダウンロードします"
+          echo "   リポジトリ: $REPO"
+          echo "   リリースタグ: $RELEASE_TAG"
+          echo "   SDKファイル: ${{ matrix.sdk_file }}"
+          
+          # リリース情報を取得
+          RELEASE_JSON=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG")
+          
+          if [ -z "$RELEASE_JSON" ] || echo "$RELEASE_JSON" | grep -q '"message":"Not Found"'; then
+            echo "❌ リリースが見つかりません: $RELEASE_TAG"
+            exit 1
+          fi
+          
+          # アセットのダウンロードURLを取得
+          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -o "\"browser_download_url\":\s*\"[^\"]*${{ matrix.sdk_file }}[^\"]*\"" | head -1 | cut -d'"' -f4)
+          
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "❌ SDKファイルが見つかりません: ${{ matrix.sdk_file }}"
+            echo "利用可能なアセット:"
+            echo "$RELEASE_JSON" | grep -o "\"name\":\s*\"[^\"]*\"" | head -5
+            exit 1
+          fi
+          
+          echo "📥 ダウンロードURL: $DOWNLOAD_URL"
+          
+          # SDKをダウンロード
+          curl -L -H "Authorization: token $GITHUB_TOKEN" \
+               -H "Accept: application/octet-stream" \
+               -o AE_SDK.zip "$DOWNLOAD_URL" || {
+            echo "❌ SDKのダウンロードに失敗しました"
+            exit 1
+          }
+          
+          # 親ディレクトリ構造を作成
+          mkdir -p "$(dirname "$EXPECTED_SDK_PATH")"
+          
+          # SDKを展開
+          unzip -q AE_SDK.zip -d "$(dirname "$EXPECTED_SDK_PATH")" || {
+            # ZIPのルートにSDKがある場合
+            unzip -q AE_SDK.zip
+            if [ -d "Adobe-AE-SDK" ]; then
+              mv Adobe-AE-SDK "$EXPECTED_SDK_PATH"
+            elif [ -d "SDK" ]; then
+              mv SDK "$EXPECTED_SDK_PATH"
+            else
+              # 展開されたファイルを直接移動
+              mkdir -p "$EXPECTED_SDK_PATH"
+              find . -maxdepth 1 -type d \( -name "Headers" -o -name "Util" \) -exec mv {} "$EXPECTED_SDK_PATH/" \;
+            fi
+          }
+          
+          # クリーンアップ
+          rm -f AE_SDK.zip
+          
+          # 最終確認
+          if [ -d "$EXPECTED_SDK_PATH/Headers" ] && [ -d "$EXPECTED_SDK_PATH/Util" ]; then
+            echo "✅ AeSDKのセットアップが完了しました"
+            echo "📁 AeSDKパス: $EXPECTED_SDK_PATH"
+          else
+            echo "❌ AeSDKのセットアップに失敗しました"
+            exit 1
+          fi
+
+      # 6. Windows用: GitHubリリースからAE SDKをダウンロード
+      - name: Download AE SDK from GitHub Release (Windows)
+        if: matrix.platform == 'win'
+        env:
+          GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
+        shell: powershell
+        run: |
+          $EXPECTED_SDK_PATH = "${{ steps.project_path.outputs.expected_sdk_path }}"
+          
+          # AeSDKが既に存在するか確認
+          if ((Test-Path "$EXPECTED_SDK_PATH\Headers") -and (Test-Path "$EXPECTED_SDK_PATH\Util")) {
+            Write-Output "✅ AeSDKが既に存在します: $EXPECTED_SDK_PATH"
+            exit 0
+          }
+          
+          # GitHub APIを使用してリリース情報を取得
+          $RELEASE_TAG = "ae-sdk_25.6_61"
+          $REPO = "rebuildup/my-ae-sdk-storage"
+          
+          Write-Output "📦 GitHubリリースからAeSDKをダウンロードします"
+          Write-Output "   リポジトリ: $REPO"
+          Write-Output "   リリースタグ: $RELEASE_TAG"
+          Write-Output "   SDKファイル: ${{ matrix.sdk_file }}"
+          
+          # リリース情報を取得
+          $headers = @{
+            Authorization = "token $env:GITHUB_TOKEN"
+          }
+          $releaseUrl = "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"
+          $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers
+          
+          # アセットのダウンロードURLを取得
+          $downloadUrl = ($releaseJson.assets | Where-Object { $_.name -eq "${{ matrix.sdk_file }}" }).browser_download_url
+          
+          if (-not $downloadUrl) {
+            Write-Output "❌ SDKファイルが見つかりません: ${{ matrix.sdk_file }}"
+            Write-Output "利用可能なアセット:"
+            $releaseJson.assets | ForEach-Object { Write-Output "  - $($_.name)" }
+            exit 1
+          }
+          
+          Write-Output "📥 ダウンロードURL: $downloadUrl"
+          
+          # SDKをダウンロード
+          $outputPath = "AE_SDK.zip"
+          Invoke-WebRequest -Uri $downloadUrl -Headers $headers -OutFile $outputPath
+          
+          # 親ディレクトリ構造を作成
+          $parentDir = Split-Path -Parent $EXPECTED_SDK_PATH
+          New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
+          
+          # SDKを展開
+          Expand-Archive -Path $outputPath -DestinationPath $parentDir -Force
+          
+          # ZIPのルートにSDKがある場合の処理
+          if (Test-Path "$parentDir\Adobe-AE-SDK") {
+            Move-Item "$parentDir\Adobe-AE-SDK" $EXPECTED_SDK_PATH -Force
+          } elseif (Test-Path "$parentDir\SDK") {
+            Move-Item "$parentDir\SDK" $EXPECTED_SDK_PATH -Force
+          } elseif ((Test-Path "$parentDir\Headers") -or (Test-Path "$parentDir\Util")) {
+            New-Item -ItemType Directory -Force -Path $EXPECTED_SDK_PATH | Out-Null
+            if (Test-Path "$parentDir\Headers") { Move-Item "$parentDir\Headers" $EXPECTED_SDK_PATH -Force }
+            if (Test-Path "$parentDir\Util") { Move-Item "$parentDir\Util" $EXPECTED_SDK_PATH -Force }
+          }
+          
+          # クリーンアップ
+          Remove-Item $outputPath -Force
+          
+          # 最終確認
+          if ((Test-Path "$EXPECTED_SDK_PATH\Headers") -and (Test-Path "$EXPECTED_SDK_PATH\Util")) {
+            Write-Output "✅ AeSDKのセットアップが完了しました"
+            Write-Output "📁 AeSDKパス: $EXPECTED_SDK_PATH"
+          } else {
+            Write-Output "❌ AeSDKのセットアップに失敗しました"
+            exit 1
+          fi
+
+      # 7. Mac用: Xcodeビルドの実行
+      - name: Build Xcode Project (Unsigned)
+        if: matrix.platform == 'mac'
+        run: |
+          PROJECT_DIR="${{ steps.project_path.outputs.project_dir }}"
+          BUILD_DIR="${{ steps.project_path.outputs.build_dir }}"
+          
+          cd "$BUILD_DIR"
+          
+          xcodebuild build \
+            -project sep_color.xcodeproj \
+            -target sep_color \
+            -configuration Debug \
+            -sdk macosx \
+            -arch x86_64 \
+            -arch arm64 \
+            -destination 'platform=macOS' \
+            CONFIGURATION_BUILD_DIR="$(pwd)/build" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+          
+          # ビルド成果物の確認
+          echo "📦 ビルド成果物を検索:"
+          PLUGIN_PATH=$(find build -name "sep_color.plugin" -type d 2>/dev/null | head -1)
+          if [ -n "$PLUGIN_PATH" ]; then
+            echo "✅ ビルド成果物が見つかりました: $PLUGIN_PATH"
+          else
+            echo "⚠️  ビルド成果物が見つかりませんでした"
+            find build -type d -name "*.plugin" 2>/dev/null || true
+          fi
+
+      # 8. Windows用: MSBuildビルドの実行
+      - name: Build Visual Studio Project (Unsigned)
+        if: matrix.platform == 'win'
+        run: |
+          $PROJECT_DIR = "${{ steps.project_path.outputs.project_dir }}"
+          $BUILD_DIR = "${{ steps.project_path.outputs.build_dir }}"
+          
+          Set-Location $BUILD_DIR
+          
+          # MSBuildでビルド
+          msbuild sep_color.sln `
+            /p:Configuration=Debug `
+            /p:Platform=x64 `
+            /p:OutDir="$BUILD_DIR\build\x64\Debug\" `
+            /t:Build `
+            /v:minimal
+          
+          # ビルド成果物の確認
+          Write-Output "📦 ビルド成果物を検索:"
+          $AEX_PATH = Get-ChildItem -Path "$BUILD_DIR\build" -Filter "sep_color.aex" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($AEX_PATH) {
+            Write-Output "✅ ビルド成果物が見つかりました: $($AEX_PATH.FullName)"
+          } else {
+            Write-Output "⚠️  ビルド成果物が見つかりませんでした"
+            Get-ChildItem -Path "$BUILD_DIR\build" -Filter "*.aex" -Recurse -ErrorAction SilentlyContinue
+          }
+
+      # 9. Mac用: .pluginバンドルのZIP圧縮
+      - name: Compress .plugin Bundle
+        if: success() && matrix.platform == 'mac'
+        run: |
+          PROJECT_DIR="${{ steps.project_path.outputs.project_dir }}"
+          BUILD_DIR="${{ steps.project_path.outputs.build_dir }}"
+          
+          cd "$BUILD_DIR/build"
+          
+          PLUGIN_PATH=$(find . -name "sep_color.plugin" -type d 2>/dev/null | head -1)
+          if [ -n "$PLUGIN_PATH" ]; then
+            ditto -c -k --sequesterRsrc "$PLUGIN_PATH" "../sep_color-macOS-unsigned.zip"
+            echo "✅ プラグインバンドルを圧縮しました: sep_color-macOS-unsigned.zip"
+          fi
+
+      # 10. Windows用: .aexファイルのZIP圧縮
+      - name: Compress .aex File
+        if: success() && matrix.platform == 'win'
+        run: |
+          $BUILD_DIR = "${{ steps.project_path.outputs.build_dir }}"
+          
+          $AEX_PATH = Get-ChildItem -Path "$BUILD_DIR\build" -Filter "sep_color.aex" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($AEX_PATH) {
+            $ZIP_PATH = Join-Path $BUILD_DIR "sep_color-Windows-unsigned.zip"
+            Compress-Archive -Path $AEX_PATH.FullName -DestinationPath $ZIP_PATH -Force
+            Write-Output "✅ プラグインファイルを圧縮しました: sep_color-Windows-unsigned.zip"
+          }
+
+      # 11. テスト用アーティファクトのアップロード
+      - name: Upload Test Artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sep_color-plugin-${{ matrix.platform }}-unsigned
+          path: |
+            Template/sep_color/Mac/sep_color-macOS-unsigned.zip
+            Template/sep_color/Win/sep_color-Windows-unsigned.zip
+            sep_color/Mac/sep_color-macOS-unsigned.zip
+            sep_color/Win/sep_color-Windows-unsigned.zip
+          retention-days: 7
+          if-no-files-found: warn
+          compression-level: 6
+
+  # ============================================
+  # ジョブ2: リリースビルド (署名付き)
+  # タグがプッシュされた時のみ実行 - Mac/Windows両方
+  # ============================================
+  build-release:
+    name: Build, Sign, and Package Release
+    strategy:
+      matrix:
+        os: [macos-14, windows-latest]
+        include:
+          - os: macos-14
+            sdk_file: AfterEffectsSDK_25.6_61_mac.zip
+            platform: mac
+          - os: windows-latest
+            sdk_file: AfterEffectsSDK_25.6_61_win.zip
+            platform: win
+    
+    runs-on: ${{ matrix.os }}
+    
+    # タグがプッシュされた時のみ、このジョブを実行
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up Xcode
+        if: matrix.platform == 'mac'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.2'
+
+      - name: Accept Xcode license
+        if: matrix.platform == 'mac'
+        run: sudo xcodebuild -license accept
+
+      - name: Set up MSBuild
+        if: matrix.platform == 'win'
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Determine project path (Mac)
+        if: matrix.platform == 'mac'
+        id: project_path_mac
+        run: |
+          REPO_ROOT="$(pwd)"
+          PROJECT_DIR="$REPO_ROOT"
+          
+          if [ -d "Template/sep_color" ]; then
+            PROJECT_DIR="$REPO_ROOT/Template/sep_color"
+          elif [ -d "sep_color" ]; then
+            PROJECT_DIR="$REPO_ROOT/sep_color"
+          fi
+          
+          BUILD_DIR="$PROJECT_DIR/Mac"
+          EXPECTED_SDK_PATH="$(cd "$BUILD_DIR" && cd ../../.. && pwd)"
+          
+          echo "project_dir=$PROJECT_DIR" >> $GITHUB_OUTPUT
+          echo "build_dir=$BUILD_DIR" >> $GITHUB_OUTPUT
+          echo "expected_sdk_path=$EXPECTED_SDK_PATH" >> $GITHUB_OUTPUT
+
+      - name: Determine project path (Windows)
+        if: matrix.platform == 'win'
+        id: project_path_win
+        shell: powershell
+        run: |
+          $REPO_ROOT = Get-Location
+          $PROJECT_DIR = $REPO_ROOT
+          
+          if (Test-Path "Template\sep_color") {
+            $PROJECT_DIR = Join-Path $REPO_ROOT "Template\sep_color"
+          } elseif (Test-Path "sep_color") {
+            $PROJECT_DIR = Join-Path $REPO_ROOT "sep_color"
+          }
+          
+          $BUILD_DIR = Join-Path $PROJECT_DIR "Win"
+          $EXPECTED_SDK_PATH = (Get-Item (Join-Path $BUILD_DIR "..\..\..")).FullName
+          
+          Write-Output "project_dir=$PROJECT_DIR" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Output "build_dir=$BUILD_DIR" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Output "expected_sdk_path=$EXPECTED_SDK_PATH" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Set project path outputs
+        id: project_path
+        run: |
+          if [ "${{ matrix.platform }}" == "mac" ]; then
+            echo "project_dir=${{ steps.project_path_mac.outputs.project_dir }}" >> $GITHUB_OUTPUT
+            echo "build_dir=${{ steps.project_path_mac.outputs.build_dir }}" >> $GITHUB_OUTPUT
+            echo "expected_sdk_path=${{ steps.project_path_mac.outputs.expected_sdk_path }}" >> $GITHUB_OUTPUT
+          else
+            echo "project_dir=${{ steps.project_path_win.outputs.project_dir }}" >> $GITHUB_OUTPUT
+            echo "build_dir=${{ steps.project_path_win.outputs.build_dir }}" >> $GITHUB_OUTPUT
+            echo "expected_sdk_path=${{ steps.project_path_win.outputs.expected_sdk_path }}" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Download AE SDK from GitHub Release (Mac)
+        if: matrix.platform == 'mac'
+        env:
+          GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
+        run: |
+          EXPECTED_SDK_PATH="${{ steps.project_path.outputs.expected_sdk_path }}"
+          
+          if [ -d "$EXPECTED_SDK_PATH/Headers" ] && [ -d "$EXPECTED_SDK_PATH/Util" ]; then
+            echo "✅ AeSDKが既に存在します"
+            exit 0
+          fi
+          
+          RELEASE_TAG="ae-sdk_25.6_61"
+          REPO="rebuildup/my-ae-sdk-storage"
+          
+          RELEASE_JSON=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG")
+          
+          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -o "\"browser_download_url\":\s*\"[^\"]*${{ matrix.sdk_file }}[^\"]*\"" | head -1 | cut -d'"' -f4)
+          
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "❌ SDKファイルが見つかりません: ${{ matrix.sdk_file }}"
+            exit 1
+          fi
+          
+          curl -L -H "Authorization: token $GITHUB_TOKEN" \
+               -H "Accept: application/octet-stream" \
+               -o AE_SDK.zip "$DOWNLOAD_URL" || exit 1
+          
+          mkdir -p "$(dirname "$EXPECTED_SDK_PATH")"
+          unzip -q AE_SDK.zip -d "$(dirname "$EXPECTED_SDK_PATH")" || {
+            unzip -q AE_SDK.zip
+            [ -d "Adobe-AE-SDK" ] && mv Adobe-AE-SDK "$EXPECTED_SDK_PATH" || \
+            [ -d "SDK" ] && mv SDK "$EXPECTED_SDK_PATH" || \
+            mkdir -p "$EXPECTED_SDK_PATH" && find . -maxdepth 1 -type d \( -name "Headers" -o -name "Util" \) -exec mv {} "$EXPECTED_SDK_PATH/" \;
+          }
+          rm -f AE_SDK.zip
+          
+          if [ ! -d "$EXPECTED_SDK_PATH/Headers" ] || [ ! -d "$EXPECTED_SDK_PATH/Util" ]; then
+            echo "❌ AeSDKのセットアップに失敗しました"
+            exit 1
+          fi
+
+      - name: Download AE SDK from GitHub Release (Windows)
+        if: matrix.platform == 'win'
+        env:
+          GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
+        shell: powershell
+        run: |
+          $EXPECTED_SDK_PATH = "${{ steps.project_path.outputs.expected_sdk_path }}"
+          
+          if ((Test-Path "$EXPECTED_SDK_PATH\Headers") -and (Test-Path "$EXPECTED_SDK_PATH\Util")) {
+            Write-Output "✅ AeSDKが既に存在します"
+            exit 0
+          }
+          
+          $RELEASE_TAG = "ae-sdk_25.6_61"
+          $REPO = "rebuildup/my-ae-sdk-storage"
+          
+          $headers = @{
+            Authorization = "token $env:GITHUB_TOKEN"
+          }
+          $releaseUrl = "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"
+          $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers
+          
+          $downloadUrl = ($releaseJson.assets | Where-Object { $_.name -eq "${{ matrix.sdk_file }}" }).browser_download_url
+          
+          if (-not $downloadUrl) {
+            Write-Output "❌ SDKファイルが見つかりません: ${{ matrix.sdk_file }}"
+            exit 1
+          }
+          
+          Invoke-WebRequest -Uri $downloadUrl -Headers $headers -OutFile "AE_SDK.zip"
+          
+          $parentDir = Split-Path -Parent $EXPECTED_SDK_PATH
+          New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
+          Expand-Archive -Path "AE_SDK.zip" -DestinationPath $parentDir -Force
+          
+          if (Test-Path "$parentDir\Adobe-AE-SDK") {
+            Move-Item "$parentDir\Adobe-AE-SDK" $EXPECTED_SDK_PATH -Force
+          } elseif (Test-Path "$parentDir\SDK") {
+            Move-Item "$parentDir\SDK" $EXPECTED_SDK_PATH -Force
+          } elseif ((Test-Path "$parentDir\Headers") -or (Test-Path "$parentDir\Util")) {
+            New-Item -ItemType Directory -Force -Path $EXPECTED_SDK_PATH | Out-Null
+            if (Test-Path "$parentDir\Headers") { Move-Item "$parentDir\Headers" $EXPECTED_SDK_PATH -Force }
+            if (Test-Path "$parentDir\Util") { Move-Item "$parentDir\Util" $EXPECTED_SDK_PATH -Force }
+          }
+          
+          Remove-Item "AE_SDK.zip" -Force
+          
+          if (-not ((Test-Path "$EXPECTED_SDK_PATH\Headers") -and (Test-Path "$EXPECTED_SDK_PATH\Util"))) {
+            Write-Output "❌ AeSDKのセットアップに失敗しました"
+            exit 1
+          }
+
+      # Mac用: キーチェーン・スクリプト（コードサイニング用）
+      - name: Install Apple Certificate and Profile
+        if: matrix.platform == 'mac'
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          
+          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          PROFILE_PATH=~/Library/MobileDevice/Provisioning\ Profiles/
+          mkdir -p "$PROFILE_PATH"
+          PROVISIONING_PROFILE_PATH=$RUNNER_TEMP/profile.provisionprofile
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PROVISIONING_PROFILE_PATH
+          cp $PROVISIONING_PROFILE_PATH "$PROFILE_PATH"
+
+      # Mac用: Xcodeビルドの実行 (署名あり)
+      - name: Build Xcode Project (Signed)
+        if: matrix.platform == 'mac'
+        run: |
+          PROJECT_DIR="${{ steps.project_path.outputs.project_dir }}"
+          BUILD_DIR="${{ steps.project_path.outputs.build_dir }}"
+          
+          cd "$BUILD_DIR"
+          
+          xcodebuild build \
+            -project sep_color.xcodeproj \
+            -target sep_color \
+            -configuration Release \
+            -sdk macosx \
+            -arch x86_64 \
+            -arch arm64 \
+            -destination 'platform=macOS' \
+            CONFIGURATION_BUILD_DIR="$(pwd)/build"
+
+      # Windows用: MSBuildビルドの実行 (Release)
+      - name: Build Visual Studio Project (Release)
+        if: matrix.platform == 'win'
+        run: |
+          $PROJECT_DIR = "${{ steps.project_path.outputs.project_dir }}"
+          $BUILD_DIR = "${{ steps.project_path.outputs.build_dir }}"
+          
+          Set-Location $BUILD_DIR
+          
+          msbuild sep_color.sln `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:OutDir="$BUILD_DIR\build\x64\Release\" `
+            /t:Build `
+            /v:minimal
+
+      # Mac用: .pluginバンドルのZIP圧縮
+      - name: Compress .plugin Bundle
+        if: matrix.platform == 'mac'
+        run: |
+          PROJECT_DIR="${{ steps.project_path.outputs.project_dir }}"
+          BUILD_DIR="${{ steps.project_path.outputs.build_dir }}"
+          
+          cd "$BUILD_DIR/build"
+          
+          PLUGIN_PATH=$(find . -name "sep_color.plugin" -type d 2>/dev/null | head -1)
+          if [ -n "$PLUGIN_PATH" ]; then
+            ditto -c -k --sequesterRsrc "$PLUGIN_PATH" "../sep_color-macOS-${{ github.ref_name }}.zip"
+            echo "✅ プラグインバンドルを圧縮しました"
+          fi
+
+      # Windows用: .aexファイルのZIP圧縮
+      - name: Compress .aex File
+        if: matrix.platform == 'win'
+        run: |
+          $BUILD_DIR = "${{ steps.project_path.outputs.build_dir }}"
+          
+          $AEX_PATH = Get-ChildItem -Path "$BUILD_DIR\build" -Filter "sep_color.aex" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($AEX_PATH) {
+            $ZIP_PATH = Join-Path $BUILD_DIR "sep_color-Windows-${{ github.ref_name }}.zip"
+            Compress-Archive -Path $AEX_PATH.FullName -DestinationPath $ZIP_PATH -Force
+            Write-Output "✅ プラグインファイルを圧縮しました"
+          }
+
+      # リリース用アーティファクトのアップロード
+      - name: Upload Release Artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sep_color-plugin-${{ matrix.platform }}-${{ github.ref_name }}
+          path: |
+            Template/sep_color/Mac/sep_color-macOS-${{ github.ref_name }}.zip
+            Template/sep_color/Win/sep_color-Windows-${{ github.ref_name }}.zip
+            sep_color/Mac/sep_color-macOS-${{ github.ref_name }}.zip
+            sep_color/Win/sep_color-Windows-${{ github.ref_name }}.zip
+          retention-days: 90
+          if-no-files-found: warn
+          compression-level: 6
