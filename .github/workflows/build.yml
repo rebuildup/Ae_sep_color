@@ -440,18 +440,21 @@ jobs:
 
           run_extract_scripts() {
             local search_root="$1"
-            local found=0
+            local scripts
+            scripts=$(find "$search_root" -type f -name "extractzstd.sh" 2>/dev/null)
+
+            if [ -z "$scripts" ]; then
+              echo "ℹ️ extractzstd.sh は見つかりませんでした (スキップ)"
+              return 0
+            fi
+
             while IFS= read -r script_path; do
+              [ -n "$script_path" ] || continue
               [ -f "$script_path" ] || continue
-              found=1
               echo "🧰 extractスクリプトを実行: $script_path"
               chmod +x "$script_path" || true
               (cd "$(dirname "$script_path")" && bash "$(basename "$script_path")")
-            done < <(find "$search_root" -type f -name "extractzstd.sh" 2>/dev/null)
-
-            if [ $found -eq 0 ]; then
-              echo "ℹ️ extractzstd.sh は見つかりませんでした (スキップ)"
-            fi
+            done <<< "$scripts"
           }
 
           extract_nested_archives
