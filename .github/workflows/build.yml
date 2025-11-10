@@ -780,11 +780,16 @@ jobs:
               Sort-Object FullName
 
             foreach ($script in $scripts) {
-              Write-Output ("▶ SDK準備スクリプトを実行: {0}" -f $script.FullName)
+            Write-Output ("▶ SDK準備スクリプトを実行: {0}" -f $script.FullName)
+            Push-Location $script.DirectoryName
+            try {
               & cmd.exe /c "`"$($script.FullName)`""
-              if ($LASTEXITCODE -ne 0) {
-                Write-Output ("⚠️  スクリプトが終了コード {0} を返しました" -f $LASTEXITCODE)
-              }
+            } finally {
+              Pop-Location
+            }
+            if ($LASTEXITCODE -ne 0) {
+              Write-Output ("⚠️  スクリプトが終了コード {0} を返しました" -f $LASTEXITCODE)
+            }
               $result = Get-SdkSourceDirs -root $root
               if ($result) { return $result }
             }
