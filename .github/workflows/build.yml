@@ -134,12 +134,12 @@ jobs:
           fi
           
           # GitHub APIを使用してリリース情報を取得
-          RELEASE_TAG="ae-sdk_25.6_61"
+          # リリースタグの候補（優先順位順）
+          RELEASE_TAG_CANDIDATES=("sdk" "ae-sdk_25.6_61" "v25.6.61" "25.6.61")
           REPO="rebuildup/my-ae-sdk-storage"
           
           echo "📦 GitHubリリースからAeSDKをダウンロードします"
           echo "   リポジトリ: $REPO"
-          echo "   リリースタグ: $RELEASE_TAG"
           echo "   SDKファイル: ${{ matrix.sdk_file }}"
           
           # トークンの確認
@@ -149,52 +149,70 @@ jobs:
             exit 1
           fi
           
-          # リリース情報を取得（エラーハンドリングを改善）
-          echo "🔍 リリース情報を取得中..."
-          RELEASE_JSON=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" 2>&1)
+          # リリース情報を取得（複数のタグ候補を試す）
+          RELEASE_JSON=""
+          HTTP_STATUS=""
+          FOUND_TAG=""
           
-          HTTP_STATUS=$(echo "$RELEASE_JSON" | grep "HTTP_STATUS:" | cut -d: -f2)
-          RELEASE_JSON=$(echo "$RELEASE_JSON" | sed '/HTTP_STATUS:/d')
+          for RELEASE_TAG in "${RELEASE_TAG_CANDIDATES[@]}"; do
+            echo "🔍 リリース情報を取得中... (タグ: $RELEASE_TAG)"
+            RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" 2>&1)
+            
+            HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
+            RELEASE_JSON=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
+            
+            echo "📊 HTTPステータス: $HTTP_STATUS"
+            
+            if [ "$HTTP_STATUS" == "200" ]; then
+              FOUND_TAG="$RELEASE_TAG"
+              echo "✅ リリースを見つけました: $FOUND_TAG"
+              break
+            else
+              echo "⚠️  タグ '$RELEASE_TAG' が見つかりませんでした (HTTP $HTTP_STATUS)"
+            fi
+          done
           
-          echo "📊 HTTPステータス: $HTTP_STATUS"
-          
-          # タグが見つからない場合、最新リリースを試す
-          if [ "$HTTP_STATUS" != "200" ]; then
+          # どのタグも見つからない場合、最新リリースを試す
+          if [ -z "$FOUND_TAG" ]; then
             echo "⚠️  指定されたタグが見つかりません。最新リリースを取得します..."
-            RELEASE_JSON=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
               -H "Authorization: token $GITHUB_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/$REPO/releases/latest" 2>&1)
             
-            HTTP_STATUS=$(echo "$RELEASE_JSON" | grep "HTTP_STATUS:" | cut -d: -f2)
-            RELEASE_JSON=$(echo "$RELEASE_JSON" | sed '/HTTP_STATUS:/d')
+            HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
+            RELEASE_JSON=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
             
             if [ "$HTTP_STATUS" == "200" ]; then
-              ACTUAL_TAG=$(echo "$RELEASE_JSON" | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4)
-              echo "✅ 最新リリースを見つけました: $ACTUAL_TAG"
+              FOUND_TAG=$(echo "$RELEASE_JSON" | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+              echo "✅ 最新リリースを見つけました: $FOUND_TAG"
             fi
           fi
           
           if [ "$HTTP_STATUS" != "200" ]; then
             echo "❌ リリース情報の取得に失敗しました (HTTP $HTTP_STATUS)"
             echo "レスポンス:"
-            echo "$RELEASE_JSON" | head -20
+            echo "$RELEASE_JSON" | head -30
             echo ""
             echo "考えられる原因:"
             echo "  1. リポジトリが存在しない、またはプライベートリポジトリでアクセス権限がない"
-            echo "  2. リリースタグ '$RELEASE_TAG' が存在しない"
+            echo "  2. リリースタグが存在しない（試したタグ: ${RELEASE_TAG_CANDIDATES[*]}）"
             echo "  3. GitHub Personal Access Token (PAT) の権限が不足している"
             echo "  4. AE_SDK_DOWNLOAD_TOKEN が正しく設定されていない"
+            echo ""
+            echo "デバッグ情報:"
+            echo "  リポジトリ: $REPO"
+            echo "  試したタグ: ${RELEASE_TAG_CANDIDATES[*]}"
             exit 1
           fi
           
           if [ -z "$RELEASE_JSON" ] || echo "$RELEASE_JSON" | grep -q '"message":"Not Found"'; then
-            echo "❌ リリースが見つかりません: $RELEASE_TAG"
+            echo "❌ リリースが見つかりません"
             echo "レスポンス:"
-            echo "$RELEASE_JSON" | head -20
+            echo "$RELEASE_JSON" | head -30
             exit 1
           fi
           
@@ -296,12 +314,12 @@ jobs:
           }
           
           # GitHub APIを使用してリリース情報を取得
-          $RELEASE_TAG = "ae-sdk_25.6_61"
+          # リリースタグの候補（優先順位順）
+          $RELEASE_TAG_CANDIDATES = @("sdk", "ae-sdk_25.6_61", "v25.6.61", "25.6.61")
           $REPO = "rebuildup/my-ae-sdk-storage"
           
           Write-Output "📦 GitHubリリースからAeSDKをダウンロードします"
           Write-Output "   リポジトリ: $REPO"
-          Write-Output "   リリースタグ: $RELEASE_TAG"
           Write-Output "   SDKファイル: ${{ matrix.sdk_file }}"
           
           # トークンの確認
@@ -311,21 +329,51 @@ jobs:
             exit 1
           }
           
-          # リリース情報を取得
-          Write-Output "🔍 リリース情報を取得中..."
+          # リリース情報を取得（複数のタグ候補を試す）
           $headers = @{
             Authorization = "token $env:GITHUB_TOKEN"
             Accept = "application/vnd.github.v3+json"
           }
-          $releaseUrl = "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"
           
-          try {
-            $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -ErrorAction Stop
-          } catch {
-            Write-Output "❌ リリース情報の取得に失敗しました"
-            Write-Output "HTTPステータス: $($_.Exception.Response.StatusCode.value__)"
-            Write-Output "エラーメッセージ: $($_.Exception.Message)"
-            exit 1
+          $releaseJson = $null
+          $foundTag = $null
+          
+          foreach ($RELEASE_TAG in $RELEASE_TAG_CANDIDATES) {
+            Write-Output "🔍 リリース情報を取得中... (タグ: $RELEASE_TAG)"
+            $releaseUrl = "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"
+            
+            try {
+              $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -ErrorAction Stop
+              $foundTag = $RELEASE_TAG
+              Write-Output "✅ リリースを見つけました: $foundTag"
+              break
+            } catch {
+              $statusCode = $_.Exception.Response.StatusCode.value__
+              Write-Output "⚠️  タグ '$RELEASE_TAG' が見つかりませんでした (HTTP $statusCode)"
+            }
+          }
+          
+          # どのタグも見つからない場合、最新リリースを試す
+          if (-not $releaseJson) {
+            Write-Output "⚠️  指定されたタグが見つかりません。最新リリースを取得します..."
+            $releaseUrl = "https://api.github.com/repos/$REPO/releases/latest"
+            
+            try {
+              $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -ErrorAction Stop
+              $foundTag = $releaseJson.tag_name
+              Write-Output "✅ 最新リリースを見つけました: $foundTag"
+            } catch {
+              Write-Output "❌ リリース情報の取得に失敗しました"
+              Write-Output "HTTPステータス: $($_.Exception.Response.StatusCode.value__)"
+              Write-Output "エラーメッセージ: $($_.Exception.Message)"
+              Write-Output ""
+              Write-Output "考えられる原因:"
+              Write-Output "  1. リポジトリが存在しない、またはプライベートリポジトリでアクセス権限がない"
+              Write-Output "  2. リリースタグが存在しない（試したタグ: $($RELEASE_TAG_CANDIDATES -join ', ')）"
+              Write-Output "  3. GitHub Personal Access Token (PAT) の権限が不足している"
+              Write-Output "  4. AE_SDK_DOWNLOAD_TOKEN が正しく設定されていない"
+              exit 1
+            }
           }
           
           # アセットの一覧を表示（デバッグ用）
@@ -636,12 +684,13 @@ jobs:
             exit 0
           fi
           
-          RELEASE_TAG="ae-sdk_25.6_61"
+          # GitHub APIを使用してリリース情報を取得
+          # リリースタグの候補（優先順位順）
+          RELEASE_TAG_CANDIDATES=("sdk" "ae-sdk_25.6_61" "v25.6.61" "25.6.61")
           REPO="rebuildup/my-ae-sdk-storage"
           
           echo "📦 GitHubリリースからAeSDKをダウンロードします"
           echo "   リポジトリ: $REPO"
-          echo "   リリースタグ: $RELEASE_TAG"
           echo "   SDKファイル: ${{ matrix.sdk_file }}"
           
           # トークンの確認
@@ -650,19 +699,58 @@ jobs:
             exit 1
           fi
           
-          # リリース情報を取得
-          echo "🔍 リリース情報を取得中..."
-          RELEASE_JSON=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" 2>&1)
+          # リリース情報を取得（複数のタグ候補を試す）
+          RELEASE_JSON=""
+          HTTP_STATUS=""
+          FOUND_TAG=""
           
-          HTTP_STATUS=$(echo "$RELEASE_JSON" | grep "HTTP_STATUS:" | cut -d: -f2)
-          RELEASE_JSON=$(echo "$RELEASE_JSON" | sed '/HTTP_STATUS:/d')
+          for RELEASE_TAG in "${RELEASE_TAG_CANDIDATES[@]}"; do
+            echo "🔍 リリース情報を取得中... (タグ: $RELEASE_TAG)"
+            RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" 2>&1)
+            
+            HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
+            RELEASE_JSON=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
+            
+            echo "📊 HTTPステータス: $HTTP_STATUS"
+            
+            if [ "$HTTP_STATUS" == "200" ]; then
+              FOUND_TAG="$RELEASE_TAG"
+              echo "✅ リリースを見つけました: $FOUND_TAG"
+              break
+            else
+              echo "⚠️  タグ '$RELEASE_TAG' が見つかりませんでした (HTTP $HTTP_STATUS)"
+            fi
+          done
+          
+          # どのタグも見つからない場合、最新リリースを試す
+          if [ -z "$FOUND_TAG" ]; then
+            echo "⚠️  指定されたタグが見つかりません。最新リリースを取得します..."
+            RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/$REPO/releases/latest" 2>&1)
+            
+            HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
+            RELEASE_JSON=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
+            
+            if [ "$HTTP_STATUS" == "200" ]; then
+              FOUND_TAG=$(echo "$RELEASE_JSON" | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+              echo "✅ 最新リリースを見つけました: $FOUND_TAG"
+            fi
+          fi
           
           if [ "$HTTP_STATUS" != "200" ]; then
             echo "❌ リリース情報の取得に失敗しました (HTTP $HTTP_STATUS)"
-            echo "$RELEASE_JSON" | head -20
+            echo "$RELEASE_JSON" | head -30
+            echo ""
+            echo "考えられる原因:"
+            echo "  1. リポジトリが存在しない、またはプライベートリポジトリでアクセス権限がない"
+            echo "  2. リリースタグが存在しない（試したタグ: ${RELEASE_TAG_CANDIDATES[*]}）"
+            echo "  3. GitHub Personal Access Token (PAT) の権限が不足している"
+            echo "  4. AE_SDK_DOWNLOAD_TOKEN が正しく設定されていない"
             exit 1
           fi
           
@@ -727,23 +815,90 @@ jobs:
             exit 0
           }
           
-          $RELEASE_TAG = "ae-sdk_25.6_61"
+          # リリースタグの候補（優先順位順）
+          $RELEASE_TAG_CANDIDATES = @("sdk", "ae-sdk_25.6_61", "v25.6.61", "25.6.61")
           $REPO = "rebuildup/my-ae-sdk-storage"
           
+          Write-Output "📦 GitHubリリースからAeSDKをダウンロードします"
+          Write-Output "   リポジトリ: $REPO"
+          Write-Output "   SDKファイル: ${{ matrix.sdk_file }}"
+          
+          # トークンの確認
+          if (-not $env:GITHUB_TOKEN) {
+            Write-Output "❌ GITHUB_TOKENが設定されていません"
+            exit 1
+          }
+          
+          # リリース情報を取得（複数のタグ候補を試す）
           $headers = @{
             Authorization = "token $env:GITHUB_TOKEN"
+            Accept = "application/vnd.github.v3+json"
           }
-          $releaseUrl = "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"
-          $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers
           
+          $releaseJson = $null
+          $foundTag = $null
+          
+          foreach ($RELEASE_TAG in $RELEASE_TAG_CANDIDATES) {
+            Write-Output "🔍 リリース情報を取得中... (タグ: $RELEASE_TAG)"
+            $releaseUrl = "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"
+            
+            try {
+              $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -ErrorAction Stop
+              $foundTag = $RELEASE_TAG
+              Write-Output "✅ リリースを見つけました: $foundTag"
+              break
+            } catch {
+              $statusCode = $_.Exception.Response.StatusCode.value__
+              Write-Output "⚠️  タグ '$RELEASE_TAG' が見つかりませんでした (HTTP $statusCode)"
+            }
+          }
+          
+          # どのタグも見つからない場合、最新リリースを試す
+          if (-not $releaseJson) {
+            Write-Output "⚠️  指定されたタグが見つかりません。最新リリースを取得します..."
+            $releaseUrl = "https://api.github.com/repos/$REPO/releases/latest"
+            
+            try {
+              $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -ErrorAction Stop
+              $foundTag = $releaseJson.tag_name
+              Write-Output "✅ 最新リリースを見つけました: $foundTag"
+            } catch {
+              Write-Output "❌ リリース情報の取得に失敗しました"
+              Write-Output "HTTPステータス: $($_.Exception.Response.StatusCode.value__)"
+              Write-Output "エラーメッセージ: $($_.Exception.Message)"
+              exit 1
+            }
+          }
+          
+          # アセットのダウンロードURLを取得
           $downloadUrl = ($releaseJson.assets | Where-Object { $_.name -eq "${{ matrix.sdk_file }}" }).browser_download_url
           
           if (-not $downloadUrl) {
             Write-Output "❌ SDKファイルが見つかりません: ${{ matrix.sdk_file }}"
+            Write-Output "利用可能なアセット:"
+            $releaseJson.assets | ForEach-Object { Write-Output "   - $($_.name)" }
             exit 1
           }
           
-          Invoke-WebRequest -Uri $downloadUrl -Headers $headers -OutFile "AE_SDK.zip"
+          Write-Output "📥 ダウンロードURL: $downloadUrl"
+          Write-Output "⬇️  SDKをダウンロード中..."
+          
+          try {
+            Invoke-WebRequest -Uri $downloadUrl -Headers $headers -OutFile "AE_SDK.zip" -ErrorAction Stop
+          } catch {
+            Write-Output "❌ SDKのダウンロードに失敗しました"
+            Write-Output "HTTPステータス: $($_.Exception.Response.StatusCode.value__)"
+            Write-Output "エラーメッセージ: $($_.Exception.Message)"
+            exit 1
+          }
+          
+          if (-not (Test-Path "AE_SDK.zip") -or (Get-Item "AE_SDK.zip").Length -eq 0) {
+            Write-Output "❌ ダウンロードしたファイルが無効です"
+            exit 1
+          }
+          
+          $fileSize = (Get-Item "AE_SDK.zip").Length / 1MB
+          Write-Output "✅ ダウンロード完了 ($([math]::Round($fileSize, 2)) MB)"
           
           $parentDir = Split-Path -Parent $EXPECTED_SDK_PATH
           New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
