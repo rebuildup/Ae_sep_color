@@ -180,7 +180,8 @@ jobs:
       - name: Extract and Setup SDK (Mac)
         if: matrix.platform == 'mac'
         run: |
-          set -e
+          # set -e を一時的に無効化してエラーハンドリングを改善
+          set +e
           
           echo "📦 SDKを展開してセットアップします"
           
@@ -203,19 +204,35 @@ jobs:
           
           cd "$SDK_EXTRACT_DIR"
           echo "📁 作業ディレクトリ: $(pwd)"
+          ls -la
           
-          # extractzstd.shを実行
-          echo "🔧 extractzstd.shを実行してSDKを展開します..."
-          chmod +x extractzstd.sh zstd 2>/dev/null || true
+          # extractzstd.shの内容を確認
+          echo "📄 extractzstd.shの内容:"
+          cat extractzstd.sh
           
-          # macOS特有のエラー対策：xattrが失敗しても続行
-          if ! ./extractzstd.sh 2>&1; then
-            echo "⚠️ extractzstd.shがエラーを返しましたが続行します"
-            # xattrのエラーを無視してzstd展開のみ実行
-            if [ -f "zstd" ] && [ -f "ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip" ]; then
-              echo "🔧 zstd展開を直接実行..."
-              ./zstd -cd ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip | tar xvf - -C . || echo "⚠️ tar展開で警告がありました"
+          # zstdとtar.zstdファイルの存在確認
+          echo "📁 ファイル確認:"
+          ls -lh zstd ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip 2>&1 || echo "⚠️ 一部ファイルが見つかりません"
+          
+          # 実行権限を付与
+          echo "🔧 実行権限を付与..."
+          chmod +x zstd extractzstd.sh
+          
+          # xattrをスキップしてzstd展開を直接実行
+          echo "🔧 zstd展開を直接実行（xattrスキップ）..."
+          if [ -f "zstd" ] && [ -f "ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip" ]; then
+            ./zstd -cd ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip | tar xf - -C .
+            EXTRACT_RESULT=$?
+            echo "展開結果コード: $EXTRACT_RESULT"
+            
+            if [ $EXTRACT_RESULT -ne 0 ]; then
+              echo "⚠️ zstd展開でエラーが発生しましたが続行を試みます"
+            else
+              echo "✅ zstd展開が完了しました"
             fi
+          else
+            echo "❌ 必要なファイルが見つかりません"
+            exit 1
           fi
           
           echo "📁 展開後のディレクトリ構造を確認中..."
@@ -257,9 +274,11 @@ jobs:
             echo "❌ SDK root が見つかりません"
             echo "📁 現在のディレクトリ: $(pwd)"
             echo "📁 ディレクトリ一覧:"
-            find . -maxdepth 2 -type d
+            find . -maxdepth 3 -type d
             exit 1
           fi
+          
+          echo "✅ SDK root: $SDK_ROOT"
           
           # SDK_ROOT が既に Examples の場合、Template ディレクトリを確保
           if [ ! -d "$SDK_ROOT/Template" ]; then
@@ -269,10 +288,14 @@ jobs:
             echo "✅ Templateディレクトリは既に存在します"
           fi
           
-          echo "✅ SDK root: $SDK_ROOT"
+          # 環境変数を設定
           echo "SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
           
+          # 一時ファイルを削除
           rm -f ../../AE_SDK.zip 2>/dev/null || true
+          
+          # 最後に set -e を再有効化
+          set -e
 
       - name: Extract and Setup SDK (Windows)
         if: matrix.platform == 'win'
@@ -438,8 +461,6 @@ jobs:
       - name: Copy plugin to SDK Template directory (Mac)
         if: matrix.platform == 'mac'
         run: |
-          set -e
-          
           echo "📋 プラグインをSDK Templateディレクトリにコピー"
           
           # SDK_ROOT は既に Examples ディレクトリ
