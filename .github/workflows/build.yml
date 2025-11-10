@@ -340,8 +340,10 @@ jobs:
           fi
 
           find_sdk_root() {
-            local depth=$1
-            find "$EXTRACT_DIR" -mindepth 1 -maxdepth "$depth" -type d | while read dir; do
+            find "$EXTRACT_DIR" -type d | while IFS= read -r dir; do
+              if [ "$dir" = "$EXTRACT_DIR" ]; then
+                continue
+              fi
               if [ -d "$dir/Headers" ] && [ -d "$dir/Util" ]; then
                 echo "$dir"
                 break
@@ -349,7 +351,7 @@ jobs:
             done
           }
 
-          SDK_ROOT=$(find_sdk_root 4)
+          SDK_ROOT=$(find_sdk_root)
 
           find_source_dir() {
             local pattern=$1
@@ -558,8 +560,8 @@ jobs:
             exit 1
           }
 
-          function Get-SdkRoot([string]$root, [int]$depth) {
-            Get-ChildItem -Path $root -Directory -Recurse -Depth $depth -ErrorAction SilentlyContinue |
+          function Get-SdkRoot([string]$root) {
+            Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue |
               Where-Object {
                 Test-Path (Join-Path $_.FullName "Headers") -and
                 Test-Path (Join-Path $_.FullName "Util")
@@ -567,12 +569,16 @@ jobs:
               Select-Object -First 1
           }
 
-          $sdkRoot = Get-SdkRoot -root $extractDir -depth 4
+          $sdkRoot = Get-SdkRoot -root $extractDir
 
           function Get-SdkSubDir([string]$pattern) {
-            Get-ChildItem -Path $extractDir -Directory -Recurse -ErrorAction SilentlyContinue |
+            $match = Get-ChildItem -Path $extractDir -Directory -Recurse -ErrorAction SilentlyContinue |
               Where-Object { $_.FullName -like $pattern } |
-              Select-Object -ExpandProperty FullName -First 1
+              Select-Object -First 1
+            if ($match) {
+              return $match.FullName
+            }
+            return $null
           }
 
           if ($sdkRoot) {
@@ -586,13 +592,15 @@ jobs:
           if (-not $headersSrc) {
             $headersSrc = Get-ChildItem -Path $extractDir -Directory -Recurse -ErrorAction SilentlyContinue |
               Where-Object { $_.Name -ieq "Headers" } |
-              Select-Object -ExpandProperty FullName -First 1
+              Select-Object -First 1 |
+              ForEach-Object { $_.FullName }
           }
 
           if (-not $utilSrc) {
             $utilSrc = Get-ChildItem -Path $extractDir -Directory -Recurse -ErrorAction SilentlyContinue |
               Where-Object { $_.Name -ieq "Util" } |
-              Select-Object -ExpandProperty FullName -First 1
+              Select-Object -First 1 |
+              ForEach-Object { $_.FullName }
           }
 
           if (-not $headersSrc -or -not $utilSrc) {
