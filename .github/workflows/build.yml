@@ -342,6 +342,79 @@ jobs:
           HEADERS_SRC=""
           UTIL_SRC=""
 
+          extract_archive_file() {
+            local archive="$1"
+            local destination="$2"
+            local lower
+            lower=$(printf '%s' "$archive" | tr '[:upper:]' '[:lower:]')
+
+            mkdir -p "$destination"
+
+            if [[ "$lower" == *.tar.zst || "$lower" == *.tar.zstd ]]; then
+              if tar --help 2>&1 | grep -q -- "--zstd"; then
+                tar --zstd -xf "$archive" -C "$destination"
+              elif command -v zstd >/dev/null 2>&1; then
+                local tmp_tar="$destination/$(basename "${archive%.*}").tar"
+                zstd -d "$archive" -o "$tmp_tar"
+                tar -xf "$tmp_tar" -C "$destination"
+                rm -f "$tmp_tar"
+              else
+                echo "⚠️  zstdコマンドが無いため展開できません: $archive"
+                return 1
+              fi
+            elif [[ "$lower" == *.tar.gz || "$lower" == *.tgz ]]; then
+              tar -xzf "$archive" -C "$destination"
+            elif [[ "$lower" == *.tar.bz2 || "$lower" == *.tbz || "$lower" == *.tbz2 ]]; then
+              tar -xjf "$archive" -C "$destination"
+            elif [[ "$lower" == *.tar.xz || "$lower" == *.txz ]]; then
+              tar -xJf "$archive" -C "$destination"
+            elif [[ "$lower" == *.tar ]]; then
+              tar -xf "$archive" -C "$destination"
+            elif [[ "$lower" == *.zst || "$lower" == *.zstd ]]; then
+              if command -v zstd >/dev/null 2>&1; then
+                local output="$destination/$(basename "${archive%.*}")"
+                zstd -d "$archive" -o "$output"
+              else
+                echo "⚠️  zstdコマンドが無いため展開できません: $archive"
+                return 1
+              fi
+            elif [[ "$lower" == *.gz ]]; then
+              gunzip -c "$archive" > "$destination/$(basename "${archive%.*}")"
+            elif [[ "$lower" == *.bz2 ]]; then
+              bunzip2 -c "$archive" > "$destination/$(basename "${archive%.*}")"
+            elif [[ "$lower" == *.xz ]]; then
+              unxz -c "$archive" > "$destination/$(basename "${archive%.*}")"
+            elif [[ "$lower" == *.zip ]]; then
+              unzip -q "$archive" -d "$destination"
+            else
+              return 1
+            fi
+
+            return 0
+          }
+
+          extract_nested_archives() {
+            local iteration=0
+            while [ $iteration -lt 6 ]; do
+              local found=0
+              while IFS= read -r -d '' archive; do
+                [ -f "$archive" ] || continue
+                local base
+                base=$(basename "$archive")
+                local dest="$EXTRACT_DIR/nested_${iteration}_${base%.*}_$$"
+                if extract_archive_file "$archive" "$dest"; then
+                  rm -f "$archive"
+                  found=1
+                else
+                  rm -rf "$dest"
+                fi
+              done < <(find "$EXTRACT_DIR" -type f                 \( -name "*.zip" -o -name "*.tar" -o -name "*.tgz" -o -name "*.tar.gz" -o -name "*.tbz" -o -name "*.tar.bz2" -o -name "*.txz" -o -name "*.tar.xz" -o -name "*.tar.zst" -o -name "*.tar.zstd" -o -name "*.zst" -o -name "*.zstd" \) -print0)
+
+              [ $found -eq 0 ] && break
+              iteration=$((iteration+1))
+            done
+          }
+
           locate_sources_in_dir() {
             local search_root="$1"
             while IFS= read -r headers_path; do
@@ -356,7 +429,39 @@ jobs:
             return 1
           }
 
+          copy_sources_to_local() {
+            local temp_root="$EXTRACT_DIR/copied_$(date +%s)"
+            mkdir -p "$temp_root"
+            cp -R "$HEADERS_SRC" "$temp_root/Headers"
+            cp -R "$UTIL_SRC" "$temp_root/Util"
+            HEADERS_SRC="$temp_root/Headers"
+            UTIL_SRC="$temp_root/Util"
+          }
+
+          run_extract_scripts() {
+            local search_root="$1"
+            local found=0
+            while IFS= read -r script_path; do
+              [ -f "$script_path" ] || continue
+              found=1
+              echo "🧰 extractスクリプトを実行: $script_path"
+              chmod +x "$script_path" || true
+              (cd "$(dirname "$script_path")" && bash "$(basename "$script_path")")
+            done < <(find "$search_root" -type f -name "extractzstd.sh" 2>/dev/null)
+
+            if [ $found -eq 0 ]; then
+              echo "ℹ️ extractzstd.sh は見つかりませんでした (スキップ)"
+            fi
+          }
+
+          extract_nested_archives
+
           locate_sources_in_dir "$EXTRACT_DIR" || true
+
+          if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
+            run_extract_scripts "$EXTRACT_DIR"
+            locate_sources_in_dir "$EXTRACT_DIR" || true
+          fi
 
           if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
             DMG_FILE=$(find "$EXTRACT_DIR" -type f -name "*.dmg" | head -1)
@@ -364,23 +469,19 @@ jobs:
               echo "💿 DMGをマウントします: $DMG_FILE"
               MOUNT_POINT=$(mktemp -d)
               if hdiutil attach "$DMG_FILE" -mountpoint "$MOUNT_POINT" -quiet; then
-                locate_sources_in_dir "$MOUNT_POINT" || true
+                if locate_sources_in_dir "$MOUNT_POINT"; then
+                  copy_sources_to_local
+                fi
                 hdiutil detach "$MOUNT_POINT" -quiet || true
               else
                 echo "⚠️  DMGのマウントに失敗しました: $DMG_FILE"
               fi
             fi
-          fi
+          }
 
           if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
-            while IFS= read -r nested_zip; do
-              echo "🗂️  ネストされたZIPを展開します: $nested_zip"
-              DEST_DIR="$EXTRACT_DIR/nested_$(basename "${nested_zip%.*}")"
-              mkdir -p "$DEST_DIR"
-              if unzip -q "$nested_zip" -d "$DEST_DIR"; then
-                locate_sources_in_dir "$DEST_DIR" && break
-              fi
-            done < <(find "$EXTRACT_DIR" -type f -name "*.zip" 2>/dev/null)
+            extract_nested_archives
+            locate_sources_in_dir "$EXTRACT_DIR" || true
           fi
 
           if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
@@ -388,7 +489,6 @@ jobs:
             find "$EXTRACT_DIR" -type d | head -40
             exit 1
           fi
-
           mkdir -p "$EXPECTED_SDK_PATH"
           rm -rf "$EXPECTED_SDK_PATH/Headers" "$EXPECTED_SDK_PATH/Util"
           cp -R "$HEADERS_SRC" "$EXPECTED_SDK_PATH/Headers"
@@ -572,6 +672,88 @@ jobs:
             exit 1
           }
 
+          function Get-SevenZipPath {
+            $candidates = @(
+              "$env:ProgramFiles\7-Zip\7z.exe",
+              "$env:ProgramFiles(x86)\7-Zip\7z.exe",
+              "C:\Program Files\7-Zip\7z.exe"
+            )
+            foreach ($candidate in $candidates) {
+              if (Test-Path $candidate) { return $candidate }
+            }
+            return $null
+          }
+
+          $SevenZipPath = Get-SevenZipPath
+
+          function Expand-ArchiveSmart {
+            param(
+              [string]$Archive,
+              [string]$Destination
+            )
+
+            $lower = $Archive.ToLowerInvariant()
+
+            if ($lower.EndsWith(".zip")) {
+              Expand-Archive -LiteralPath $Archive -DestinationPath $Destination -Force
+              return $true
+            }
+
+            if ($SevenZipPath) {
+              & $SevenZipPath x $Archive ("-o" + $Destination) -y | Out-Null
+              return $true
+            }
+
+            if ($lower.EndsWith(".tar")) {
+              & tar -xf $Archive -C $Destination
+              return $true
+            }
+
+            if ($lower.EndsWith(".tar.gz") -or $lower.EndsWith(".tgz")) {
+              & tar -xzf $Archive -C $Destination
+              return $true
+            }
+
+            if ($lower.EndsWith(".tar.bz2") -or $lower.EndsWith(".tbz") -or $lower.EndsWith(".tbz2")) {
+              & tar -xjf $Archive -C $Destination
+              return $true
+            }
+
+            if ($lower.EndsWith(".tar.xz") -or $lower.EndsWith(".txz")) {
+              & tar -xJf $Archive -C $Destination
+              return $true
+            }
+
+            Write-Output "⚠️  未対応のアーカイブ形式です: $Archive"
+            return $false
+          }
+
+          function Expand-NestedArchives {
+            param([string]$Root)
+            for ($i = 0; $i -lt 6; $i++) {
+              $archives = Get-ChildItem -Path $Root -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '\.(zip|tar|tgz|tar\.gz|tbz|tar\.bz2|txz|tar\.xz|tar\.zst|tar\.zstd|zst|zstd)$' }
+              if (-not $archives) { break }
+
+              $expanded = $false
+              foreach ($archive in $archives) {
+                if (-not (Test-Path $archive.FullName)) { continue }
+                $dest = Join-Path $archive.Directory.FullName ("nested_{0}_{1}" -f $i, [Guid]::NewGuid().ToString('N'))
+                New-Item -ItemType Directory -Force -Path $dest | Out-Null
+                if (Expand-ArchiveSmart -Archive $archive.FullName -Destination $dest) {
+                  Remove-Item $archive.FullName -Force -ErrorAction SilentlyContinue
+                  $expanded = $true
+                } else {
+                  Remove-Item -Recurse -Force $dest -ErrorAction SilentlyContinue
+                }
+              }
+
+              if (-not $expanded) { break }
+            }
+          }
+
+          Expand-NestedArchives -Root $extractDir
+
           function Get-SdkSourceDirs {
             param([string]$root)
             $headersDirs = Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue |
@@ -593,7 +775,7 @@ jobs:
           function Invoke-SdkPrepScripts {
             param([string]$root)
             $scripts = Get-ChildItem -Path $root -Filter "*.bat" -Recurse -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -match '(setup|install|extract|expand|prepare)' } |
+              Where-Object { $_.Name -match '(setup|install|extract|expand|prepare|unpack)' } |
               Sort-Object FullName
 
             foreach ($script in $scripts) {
@@ -626,29 +808,24 @@ jobs:
             }
           }
 
-          $sdkRootDir = Get-ChildItem -Path $extractDir -Directory -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -like "AfterEffectsSDK*" } |
-            Select-Object -First 1
-          if (-not $sdkRootDir) {
-            $sdkRootDir = Get-Item $extractDir
-          }
-
-          $sources = Get-SdkSourceDirs -root $sdkRootDir.FullName
+          $sources = Get-SdkSourceDirs -root $extractDir
           if (-not $sources) {
-            $sources = Invoke-SdkPrepScripts -root $sdkRootDir.FullName
+            $sources = Invoke-SdkPrepScripts -root $extractDir
           }
 
           if (-not $sources) {
             Write-Output "❌ SDK内に Headers/Util が見つかりません"
-            Get-ChildItem $sdkRootDir.FullName -Recurse -Directory | Select-Object -First 40 | Format-Table FullName
+            Get-ChildItem $extractDir -Recurse -Directory | Select-Object -First 40 | Format-Table FullName
             exit 1
           }
 
-          Invoke-BuildAll -root $sdkRootDir.FullName
+          $sdkRoot = $sources.Root
+
+          Invoke-BuildAll -root $sdkRoot
 
           $projectDir = "${{ steps.project_path.outputs.project_dir }}"
           if ($projectDir -and (Test-Path $projectDir)) {
-            $sdkTemplateRoot = Join-Path $sdkRootDir.FullName "Template"
+            $sdkTemplateRoot = Join-Path $sdkRoot "Template"
             New-Item -ItemType Directory -Force -Path $sdkTemplateRoot | Out-Null
             $targetTemplate = Join-Path $sdkTemplateRoot (Split-Path $projectDir -Leaf)
             if (Test-Path $targetTemplate) {
