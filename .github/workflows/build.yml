@@ -253,8 +253,6 @@ jobs:
           echo "   認証: $([ -n "$GITHUB_TOKEN" ] && echo "あり" || echo "なし")"
           
           # まず認証付きで試す
-          # HTTPステータスコードを取得するために、一時ファイルを使用
-          HTTP_OUTPUT=$(mktemp)
           CURL_OUTPUT=$(curl -L -w "\nHTTP_STATUS:%{http_code}" \
                -H "Authorization: token $GITHUB_TOKEN" \
                -H "Accept: application/octet-stream" \
@@ -318,7 +316,6 @@ jobs:
               echo "  3. トークンが期限切れまたは無効"
               echo "  4. ダウンロードURLが無効またはアクセスできない"
               echo "  5. ネットワークエラーまたはタイムアウト"
-              rm -f "$HTTP_OUTPUT"
               exit 1
             else
               echo "✅ 認証なしでダウンロード成功"
@@ -326,8 +323,6 @@ jobs:
           else
             echo "✅ 認証付きでダウンロード成功"
           fi
-          
-          rm -f "$HTTP_OUTPUT"
           
           # ダウンロードしたファイルの確認
           if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
@@ -868,8 +863,6 @@ jobs:
           echo "   認証: $([ -n "$GITHUB_TOKEN" ] && echo "あり" || echo "なし")"
           
           # まず認証付きで試す
-          # HTTPステータスコードを取得するために、一時ファイルを使用
-          HTTP_OUTPUT=$(mktemp)
           CURL_OUTPUT=$(curl -L -w "\nHTTP_STATUS:%{http_code}" \
                -H "Authorization: token $GITHUB_TOKEN" \
                -H "Accept: application/octet-stream" \
@@ -933,7 +926,6 @@ jobs:
               echo "  3. トークンが期限切れまたは無効"
               echo "  4. ダウンロードURLが無効またはアクセスできない"
               echo "  5. ネットワークエラーまたはタイムアウト"
-              rm -f "$HTTP_OUTPUT"
               exit 1
             else
               echo "✅ 認証なしでダウンロード成功"
@@ -941,8 +933,6 @@ jobs:
           else
             echo "✅ 認証付きでダウンロード成功"
           fi
-          
-          rm -f "$HTTP_OUTPUT"
           
           if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
             echo "❌ ダウンロードしたファイルが無効です"
