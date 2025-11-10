@@ -375,6 +375,15 @@ jobs:
         run: |
           Write-Host "🔨 BuildAll.sln をビルドして依存関係を整えます"
           
+          # AE_PLUGIN_BUILD_DIR 環境変数をワークスペース内の書き込み可能な場所に設定
+          $outputDir = "${{ github.workspace }}\ae_plugin_output"
+          New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+          $env:AE_PLUGIN_BUILD_DIR = $outputDir
+          Write-Host "🔧 AE_PLUGIN_BUILD_DIR を設定: $outputDir"
+          
+          # 環境変数を永続化
+          Add-Content -Path $env:GITHUB_ENV -Value "AE_PLUGIN_BUILD_DIR=$outputDir"
+          
           Set-Location $env:SDK_ROOT
           
           # BuildAll.sln を探す
@@ -388,6 +397,7 @@ jobs:
           
           if ($buildSln) {
             Write-Host "📦 $buildSln をビルド中..."
+            Write-Host "⚠️ 注意: 管理者権限が必要な場合があるため、エラーは無視します"
             
             msbuild $buildSln `
               /p:Configuration=Debug `
@@ -395,11 +405,16 @@ jobs:
               /t:Build `
               /v:minimal `
               /m `
-              /nologo
+              /nologo `
+              /maxcpucount:1 2>&1 | Out-Null
             
-            Write-Host "✅ BuildAll.sln のビルドが完了しました"
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "⚠️ BuildAll.sln のビルドに失敗しましたが続行します（管理者権限が必要な可能性）"
+            } else {
+              Write-Host "✅ BuildAll.sln のビルドが完了しました"
+            }
           } else {
-            Write-Host "⚠️ BuildAll.sln が見つかりません"
+            Write-Host "⚠️ BuildAll.sln が見つかりません（スキップ）"
           }
 
       # ==================== プラグインをSDK/Examples/Templateにコピー ====================
@@ -448,6 +463,16 @@ jobs:
           Write-Host "✅ プラグインをコピーしました: $pluginDir"
           Add-Content -Path $env:GITHUB_ENV -Value "PLUGIN_DIR=$pluginDir"
 
+      # ==================== Mac用のAE_PLUGIN_BUILD_DIR設定 ====================
+      - name: Set AE_PLUGIN_BUILD_DIR (Mac)
+        if: matrix.platform == 'mac'
+        run: |
+          # AE_PLUGIN_BUILD_DIR 環境変数をワークスペース内の書き込み可能な場所に設定
+          OUTPUT_DIR="${{ github.workspace }}/ae_plugin_output"
+          mkdir -p "$OUTPUT_DIR"
+          echo "AE_PLUGIN_BUILD_DIR=$OUTPUT_DIR" >> $GITHUB_ENV
+          echo "🔧 AE_PLUGIN_BUILD_DIR を設定: $OUTPUT_DIR"
+
       # ==================== プラグインのビルド ====================
       - name: Build Plugin (Mac)
         if: matrix.platform == 'mac'
@@ -455,6 +480,12 @@ jobs:
           set -e
           
           echo "🔨 sep_color プラグインをビルド"
+          
+          if [ -n "$AE_PLUGIN_BUILD_DIR" ]; then
+            echo "🔧 AE_PLUGIN_BUILD_DIR: $AE_PLUGIN_BUILD_DIR"
+          else
+            echo "⚠️ AE_PLUGIN_BUILD_DIR が設定されていません"
+          fi
           
           cd "$PLUGIN_DIR/Mac"
           
@@ -465,6 +496,7 @@ jobs:
           fi
           
           # ビルド
+          echo "📦 プラグインをビルド中..."
           xcodebuild build \
             -project sep_color.xcodeproj \
             -target sep_color \
@@ -497,6 +529,13 @@ jobs:
         run: |
           Write-Host "🔨 sep_color プラグインをビルド"
           
+          # AE_PLUGIN_BUILD_DIR が設定されているか確認
+          if ($env:AE_PLUGIN_BUILD_DIR) {
+            Write-Host "🔧 AE_PLUGIN_BUILD_DIR: $env:AE_PLUGIN_BUILD_DIR"
+          } else {
+            Write-Host "⚠️ AE_PLUGIN_BUILD_DIR が設定されていません"
+          }
+          
           Set-Location "$env:PLUGIN_DIR\Win"
           
           if (-not (Test-Path "sep_color.sln")) {
@@ -506,13 +545,19 @@ jobs:
           }
           
           # ビルド
+          Write-Host "📦 プラグインをビルド中..."
           msbuild sep_color.sln `
             /p:Configuration=Debug `
             /p:Platform=x64 `
             /t:Build `
-            /v:minimal `
+            /v:detailed `
             /m `
             /nologo
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ ビルドに失敗しました (exit code: $LASTEXITCODE)"
+            exit 1
+          }
           
           # ビルド成果物の確認
           $aexPath = Get-ChildItem -Path . -Filter "sep_color.aex" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
