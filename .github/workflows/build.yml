@@ -222,7 +222,7 @@ jobs:
           
           # パターン1: ae*.AfterEffectsSDK を探す
           for dir in ae*.AfterEffectsSDK 2>/dev/null; do
-            if [ -d "$dir" ] && [ -d "$dir/Headers" ] && [ -d "$dir/Util" ]; then
+            if [ -d "$dir" ] && [ -d "$dir/Headers" ] && [ -d "$dir/Util" ] && [ -d "$dir/Resources" ]; then
               SDK_ROOT=$(cd "$dir" && pwd)
               echo "✅ SDK rootを発見 (パターン1): $SDK_ROOT"
               break
@@ -232,7 +232,7 @@ jobs:
           # パターン2: AfterEffectsSDK を含むディレクトリを探す
           if [ -z "$SDK_ROOT" ]; then
             for dir in *AfterEffectsSDK* 2>/dev/null; do
-              if [ -d "$dir" ] && [ -d "$dir/Headers" ] && [ -d "$dir/Util" ]; then
+              if [ -d "$dir" ] && [ -d "$dir/Headers" ] && [ -d "$dir/Util" ] && [ -d "$dir/Resources" ]; then
                 SDK_ROOT=$(cd "$dir" && pwd)
                 echo "✅ SDK rootを発見 (パターン2): $SDK_ROOT"
                 break
@@ -240,12 +240,12 @@ jobs:
             done
           fi
           
-          # パターン3: Headers と Util を含むディレクトリを深さ2まで探す
+          # パターン3: Headers, Util, Resources を含むディレクトリを深さ2まで探す
           if [ -z "$SDK_ROOT" ]; then
             echo "🔍 Headersディレクトリを検索中..."
             for dir in $(find . -maxdepth 2 -type d -name "Headers" 2>/dev/null); do
               parent=$(dirname "$dir")
-              if [ -d "$parent/Util" ]; then
+              if [ -d "$parent/Util" ] && [ -d "$parent/Resources" ]; then
                 SDK_ROOT=$(cd "$parent" && pwd)
                 echo "✅ SDK rootを発見 (パターン3): $SDK_ROOT"
                 break
@@ -316,7 +316,7 @@ jobs:
           # パターン1: ae*.AfterEffectsSDK を探す
           $sdkDirs = Get-ChildItem -Directory -Filter "ae*.AfterEffectsSDK" -ErrorAction SilentlyContinue
           foreach ($dir in $sdkDirs) {
-            if ((Test-Path "$($dir.FullName)\Headers") -and (Test-Path "$($dir.FullName)\Util")) {
+            if ((Test-Path "$($dir.FullName)\Headers") -and (Test-Path "$($dir.FullName)\Util") -and (Test-Path "$($dir.FullName)\Resources")) {
               $sdkRoot = $dir.FullName
               Write-Host "✅ SDK rootを発見 (パターン1): $sdkRoot"
               break
@@ -327,7 +327,7 @@ jobs:
           if (-not $sdkRoot) {
             $sdkDirs = Get-ChildItem -Directory | Where-Object { $_.Name -like "*AfterEffectsSDK*" }
             foreach ($dir in $sdkDirs) {
-              if ((Test-Path "$($dir.FullName)\Headers") -and (Test-Path "$($dir.FullName)\Util")) {
+              if ((Test-Path "$($dir.FullName)\Headers") -and (Test-Path "$($dir.FullName)\Util") -and (Test-Path "$($dir.FullName)\Resources")) {
                 $sdkRoot = $dir.FullName
                 Write-Host "✅ SDK rootを発見 (パターン2): $sdkRoot"
                 break
@@ -335,13 +335,13 @@ jobs:
             }
           }
           
-          # パターン3: Headers と Util を含むディレクトリを深さ2まで探す
+          # パターン3: Headers, Util, Resources を含むディレクトリを深さ2まで探す
           if (-not $sdkRoot) {
             Write-Host "🔍 Headersディレクトリを検索中..."
             $headersDirs = Get-ChildItem -Directory -Recurse -Depth 2 -Filter "Headers" -ErrorAction SilentlyContinue
             foreach ($dir in $headersDirs) {
               $parent = $dir.Parent.FullName
-              if (Test-Path "$parent\Util") {
+              if ((Test-Path "$parent\Util") -and (Test-Path "$parent\Resources")) {
                 $sdkRoot = $parent
                 Write-Host "✅ SDK rootを発見 (パターン3): $sdkRoot"
                 break
@@ -431,6 +431,12 @@ jobs:
           
           echo "🔨 sep_color プラグインをビルド"
           
+          # AE_PLUGIN_BUILD_DIR 環境変数を設定（SDKのビルドシステムが要求する場合がある）
+          PLUGIN_BUILD_DIR="${{ github.workspace }}/ae_plugin_output"
+          mkdir -p "$PLUGIN_BUILD_DIR"
+          export AE_PLUGIN_BUILD_DIR="$PLUGIN_BUILD_DIR"
+          echo "🔧 AE_PLUGIN_BUILD_DIR を設定: $PLUGIN_BUILD_DIR"
+          
           cd "$PLUGIN_DIR/Mac"
           
           if [ ! -f "sep_color.xcodeproj/project.pbxproj" ]; then
@@ -499,6 +505,12 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "🔨 sep_color プラグインをビルド"
+          
+          # AE_PLUGIN_BUILD_DIR 環境変数を設定（SDKのビルドシステムが要求）
+          $pluginBuildDir = "${{ github.workspace }}\ae_plugin_output"
+          New-Item -ItemType Directory -Path $pluginBuildDir -Force | Out-Null
+          $env:AE_PLUGIN_BUILD_DIR = $pluginBuildDir
+          Write-Host "🔧 AE_PLUGIN_BUILD_DIR を設定: $pluginBuildDir"
           
           Set-Location "$env:PLUGIN_DIR\Win"
           
