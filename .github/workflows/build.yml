@@ -224,18 +224,26 @@ jobs:
 
           # アセットの情報を取得
           ASSET_NAME="${{ matrix.sdk_file }}"
+          ASSET_JSON=$(echo "$RELEASE_JSON" | jq -c --arg name "$ASSET_NAME" '.assets[]? | select(.name == $name)' | head -1)
 
-          # jqでダウンロードURLを厳密に取得
-          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | jq -r --arg name "$ASSET_NAME" '.assets[]? | select(.name == $name) | .browser_download_url' | head -1)
-
-          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
+          if [ -z "$ASSET_JSON" ]; then
             echo "❌ SDKファイルが見つかりません: $ASSET_NAME"
             echo "利用可能なアセットの一覧:"
             echo "$RELEASE_JSON" | jq -r '.assets[]?.name' | head -10
             exit 1
           fi
-          
-          echo "📥 ダウンロードURL: $DOWNLOAD_URL"
+
+          API_DOWNLOAD_URL=$(echo "$ASSET_JSON" | jq -r '.url // empty')
+          BROWSER_DOWNLOAD_URL=$(echo "$ASSET_JSON" | jq -r '.browser_download_url // empty')
+
+          if [ -z "$API_DOWNLOAD_URL" ]; then
+            echo "❌ APIダウンロードURLが取得できません"
+            echo "$ASSET_JSON"
+            exit 1
+          fi
+
+          echo "📥 ダウンロードURL(API): $API_DOWNLOAD_URL"
+          [ -n "$BROWSER_DOWNLOAD_URL" ] && echo "📥 ダウンロードURL(ブラウザ): $BROWSER_DOWNLOAD_URL"
           
           # SDKをダウンロード（認証ヘッダーを付ける）
           echo "⬇️  SDKをダウンロード中..."
@@ -248,7 +256,7 @@ jobs:
                -H "Accept: application/octet-stream" \
                -H "User-Agent: GitHub-Actions" \
                -o AE_SDK.zip \
-               -s -S "$DOWNLOAD_URL" 2>&1)
+               -s -S "$API_DOWNLOAD_URL" 2>&1)
           
           CURL_EXIT_CODE=$?
           HTTP_STATUS=$(echo "$CURL_OUTPUT" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
@@ -277,7 +285,7 @@ jobs:
                  -H "Accept: application/octet-stream" \
                  -H "User-Agent: GitHub-Actions" \
                  -o AE_SDK.zip \
-                 -s -S "$DOWNLOAD_URL" 2>&1)
+                 -s -S "${BROWSER_DOWNLOAD_URL:-$API_DOWNLOAD_URL}" 2>&1)
             
             CURL_EXIT_CODE2=$?
             HTTP_STATUS2=$(echo "$CURL_OUTPUT2" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
@@ -449,27 +457,53 @@ jobs:
           $releaseJson.assets | ForEach-Object { Write-Output "   - $($_.name)" }
           
           # アセットのダウンロードURLを取得
-          $downloadUrl = ($releaseJson.assets | Where-Object { $_.name -eq "${{ matrix.sdk_file }}" }).browser_download_url
-          
-          if (-not $downloadUrl) {
+          $asset = $releaseJson.assets | Where-Object { $_.name -eq "${{ matrix.sdk_file }}" } | Select-Object -First 1
+
+          if (-not $asset) {
             Write-Output "❌ SDKファイルが見つかりません: ${{ matrix.sdk_file }}"
             Write-Output "利用可能なアセットの一覧:"
             $releaseJson.assets | ForEach-Object { Write-Output "   - $($_.name)" }
             exit 1
           }
-          
-          Write-Output "📥 ダウンロードURL: $downloadUrl"
-          
-          # SDKをダウンロード
+
+          $apiDownloadUrl = $asset.url
+          $browserDownloadUrl = $asset.browser_download_url
+
+          if (-not $apiDownloadUrl) {
+            Write-Output "❌ APIダウンロードURLが取得できません"
+            Write-Output ($asset | ConvertTo-Json -Depth 5)
+            exit 1
+          }
+
+          Write-Output "📥 ダウンロードURL(API): $apiDownloadUrl"
+          if ($browserDownloadUrl) { Write-Output "📥 ダウンロードURL(ブラウザ): $browserDownloadUrl" }
+
+          # SDKをダウンロード (API経由)
           Write-Output "⬇️  SDKをダウンロード中..."
           $outputPath = "AE_SDK.zip"
+          $downloadHeaders = @{
+            Authorization = "token $env:GITHUB_TOKEN"
+            Accept = "application/octet-stream"
+            "User-Agent" = "GitHub-Actions"
+          }
+
           try {
-            Invoke-WebRequest -Uri $downloadUrl -Headers $headers -OutFile $outputPath -ErrorAction Stop
+            Invoke-WebRequest -Uri $apiDownloadUrl -Headers $downloadHeaders -OutFile $outputPath -ErrorAction Stop
           } catch {
-            Write-Output "❌ SDKのダウンロードに失敗しました"
-            Write-Output "HTTPステータス: $($_.Exception.Response.StatusCode.value__)"
-            Write-Output "エラーメッセージ: $($_.Exception.Message)"
-            exit 1
+            Write-Output "⚠️  API経由のダウンロードに失敗しました: $($_.Exception.Message)"
+            if ($browserDownloadUrl) {
+              Write-Output "試行: ブラウザURLを使用 (認証なし)"
+              try {
+                Invoke-WebRequest -Uri $browserDownloadUrl -OutFile $outputPath -ErrorAction Stop
+              } catch {
+                Write-Output "❌ SDKのダウンロードに失敗しました"
+                Write-Output "HTTPステータス: $($_.Exception.Response.StatusCode.value__)"
+                Write-Output "エラーメッセージ: $($_.Exception.Message)"
+                exit 1
+              }
+            } else {
+              exit 1
+            }
           }
           
           # ダウンロードしたファイルの確認
