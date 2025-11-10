@@ -1,17 +1,14 @@
 name: Build After Effects Plugin
 
 on:
-  # プルリクエスト (main/master/developブランチ対象) でトリガー
   pull_request:
     branches: [ main, master, develop ]
   
-  # 'v'で始まるタグ (例: v1.0.0) がプッシュされた時にトリガー
   push:
     branches: [ main, master, develop ]
     tags:
       - 'v*'
   
-  # 手動実行
   workflow_dispatch:
 
 jobs:
