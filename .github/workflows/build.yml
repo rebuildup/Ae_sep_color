@@ -218,14 +218,15 @@ jobs:
           ls -la
           
           # SDK rootを見つける (より効率的な検索)
-          # 重要: Examples ディレクトリは除外する
+          # 重要: ディレクトリ名が "Examples" そのものは除外する
           SDK_ROOT=""
           
           # パターン1: ae*.AfterEffectsSDK を探す
           for dir in ae*.AfterEffectsSDK 2>/dev/null; do
-            if [[ "$dir" != *"Examples"* ]] && [ -d "$dir" ] && [ -d "$dir/Headers" ] && [ -d "$dir/Util" ] && [ -d "$dir/Resources" ] && [ -f "$dir/Resources/PiPLTool" ]; then
+            if [ "$dir" != "Examples" ] && [ -d "$dir" ] && [ -d "$dir/Headers" ] && [ -d "$dir/Util" ] && [ -d "$dir/Resources" ]; then
               SDK_ROOT=$(cd "$dir" && pwd)
               echo "✅ SDK rootを発見 (パターン1): $SDK_ROOT"
+              echo "   ディレクトリ名: $dir"
               break
             fi
           done
@@ -233,23 +234,25 @@ jobs:
           # パターン2: AfterEffectsSDK を含むディレクトリを探す
           if [ -z "$SDK_ROOT" ]; then
             for dir in *AfterEffectsSDK* 2>/dev/null; do
-              if [[ "$dir" != *"Examples"* ]] && [ -d "$dir" ] && [ -d "$dir/Headers" ] && [ -d "$dir/Util" ] && [ -d "$dir/Resources" ] && [ -f "$dir/Resources/PiPLTool" ]; then
+              if [ "$dir" != "Examples" ] && [ -d "$dir" ] && [ -d "$dir/Headers" ] && [ -d "$dir/Util" ] && [ -d "$dir/Resources" ]; then
                 SDK_ROOT=$(cd "$dir" && pwd)
                 echo "✅ SDK rootを発見 (パターン2): $SDK_ROOT"
+                echo "   ディレクトリ名: $dir"
                 break
               fi
             done
           fi
           
-          # パターン3: Headers, Util, Resources, PiPLTool を含むディレクトリを深さ2まで探す
+          # パターン3: Headers, Util, Resources を含むディレクトリを深さ2まで探す
           if [ -z "$SDK_ROOT" ]; then
             echo "🔍 Headersディレクトリを検索中..."
             for dir in $(find . -maxdepth 2 -type d -name "Headers" 2>/dev/null); do
               parent=$(dirname "$dir")
               parent_name=$(basename "$parent")
-              if [[ "$parent_name" != *"Examples"* ]] && [ -d "$parent/Util" ] && [ -d "$parent/Resources" ] && [ -f "$parent/Resources/PiPLTool" ]; then
+              if [ "$parent_name" != "Examples" ] && [ -d "$parent/Util" ] && [ -d "$parent/Resources" ]; then
                 SDK_ROOT=$(cd "$parent" && pwd)
                 echo "✅ SDK rootを発見 (パターン3): $SDK_ROOT"
+                echo "   ディレクトリ名: $parent_name"
                 break
               fi
             done
@@ -320,53 +323,53 @@ jobs:
           
           # SDK rootを見つける (より効率的な検索)
           # 一般的なパターン: ae25.*.AfterEffectsSDK のようなディレクトリを探す
-          # 重要: Examples ディレクトリは除外する
+          # 重要: ディレクトリ名が "Examples" そのものは除外する
           $sdkRoot = $null
           
           # パターン1: ae*.AfterEffectsSDK を探す
           $sdkDirs = Get-ChildItem -Directory -Filter "ae*.AfterEffectsSDK" -ErrorAction SilentlyContinue
           foreach ($dir in $sdkDirs) {
-            # Examplesディレクトリは除外
-            if ($dir.Name -notlike "*Examples*" -and 
+            # ディレクトリ名が "Examples" そのものでないことを確認
+            if ($dir.Name -ne "Examples" -and 
                 (Test-Path "$($dir.FullName)\Headers") -and 
                 (Test-Path "$($dir.FullName)\Util") -and 
-                (Test-Path "$($dir.FullName)\Resources") -and
-                (Test-Path "$($dir.FullName)\Resources\PiPLTool.exe")) {
+                (Test-Path "$($dir.FullName)\Resources")) {
               $sdkRoot = $dir.FullName
               Write-Host "✅ SDK rootを発見 (パターン1): $sdkRoot"
+              Write-Host "   ディレクトリ名: $($dir.Name)"
               break
             }
           }
           
           # パターン2: AfterEffectsSDK を含むディレクトリを探す
           if (-not $sdkRoot) {
-            $sdkDirs = Get-ChildItem -Directory | Where-Object { $_.Name -like "*AfterEffectsSDK*" -and $_.Name -notlike "*Examples*" }
+            $sdkDirs = Get-ChildItem -Directory | Where-Object { $_.Name -like "*AfterEffectsSDK*" -and $_.Name -ne "Examples" }
             foreach ($dir in $sdkDirs) {
               if ((Test-Path "$($dir.FullName)\Headers") -and 
                   (Test-Path "$($dir.FullName)\Util") -and 
-                  (Test-Path "$($dir.FullName)\Resources") -and
-                  (Test-Path "$($dir.FullName)\Resources\PiPLTool.exe")) {
+                  (Test-Path "$($dir.FullName)\Resources")) {
                 $sdkRoot = $dir.FullName
                 Write-Host "✅ SDK rootを発見 (パターン2): $sdkRoot"
+                Write-Host "   ディレクトリ名: $($dir.Name)"
                 break
               }
             }
           }
           
-          # パターン3: Headers, Util, Resources, PiPLTool を含むディレクトリを深さ2まで探す
+          # パターン3: Headers, Util, Resources を含むディレクトリを深さ2まで探す
           if (-not $sdkRoot) {
             Write-Host "🔍 Headersディレクトリを検索中..."
             $headersDirs = Get-ChildItem -Directory -Recurse -Depth 2 -Filter "Headers" -ErrorAction SilentlyContinue
             foreach ($dir in $headersDirs) {
               $parent = $dir.Parent.FullName
               $parentName = $dir.Parent.Name
-              # Examplesディレクトリは除外
-              if ($parentName -notlike "*Examples*" -and
+              # ディレクトリ名が "Examples" そのものでないことを確認
+              if ($parentName -ne "Examples" -and
                   (Test-Path "$parent\Util") -and 
-                  (Test-Path "$parent\Resources") -and
-                  (Test-Path "$parent\Resources\PiPLTool.exe")) {
+                  (Test-Path "$parent\Resources")) {
                 $sdkRoot = $parent
                 Write-Host "✅ SDK rootを発見 (パターン3): $sdkRoot"
+                Write-Host "   ディレクトリ名: $parentName"
                 break
               }
             }
