@@ -1,0 +1,590 @@
+﻿2025-11-10T12:54:45.0465897Z Current runner version: '2.329.0'
+2025-11-10T12:54:45.0492070Z ##[group]Runner Image Provisioner
+2025-11-10T12:54:45.0492848Z Hosted Compute Agent
+2025-11-10T12:54:45.0493372Z Version: 20251016.436
+2025-11-10T12:54:45.0493918Z Commit: 8ab8ac8bfd662a3739dab9fe09456aba92132568
+2025-11-10T12:54:45.0494596Z Build Date: 2025-10-15T20:44:12Z
+2025-11-10T12:54:45.0495156Z ##[endgroup]
+2025-11-10T12:54:45.0495624Z ##[group]Operating System
+2025-11-10T12:54:45.0496196Z Microsoft Windows Server 2025
+2025-11-10T12:54:45.0496740Z 10.0.26100
+2025-11-10T12:54:45.0497146Z Datacenter
+2025-11-10T12:54:45.0497598Z ##[endgroup]
+2025-11-10T12:54:45.0498018Z ##[group]Runner Image
+2025-11-10T12:54:45.0498515Z Image: windows-2025
+2025-11-10T12:54:45.0498995Z Version: 20251102.77.1
+2025-11-10T12:54:45.0499938Z Included Software: https://github.com/actions/runner-images/blob/win25/20251102.77/images/windows/Windows2025-Readme.md
+2025-11-10T12:54:45.0502247Z Image Release: https://github.com/actions/runner-images/releases/tag/win25%2F20251102.77
+2025-11-10T12:54:45.0503220Z ##[endgroup]
+2025-11-10T12:54:45.0504267Z ##[group]GITHUB_TOKEN Permissions
+2025-11-10T12:54:45.0506101Z Contents: read
+2025-11-10T12:54:45.0506633Z Metadata: read
+2025-11-10T12:54:45.0507403Z Packages: read
+2025-11-10T12:54:45.0507919Z ##[endgroup]
+2025-11-10T12:54:45.0510213Z Secret source: Actions
+2025-11-10T12:54:45.0510926Z Prepare workflow directory
+2025-11-10T12:54:45.0887158Z Prepare all required actions
+2025-11-10T12:54:45.0924865Z Getting action download info
+2025-11-10T12:54:45.3802978Z Download action repository 'actions/checkout@v4' (SHA:08eba0b27e820071cde6df949e0beb9ba4906955)
+2025-11-10T12:54:45.5511871Z Download action repository 'maxim-lobanov/setup-xcode@v1' (SHA:60606e260d2fc5762a71e64e74b2174e8ea3c8bd)
+2025-11-10T12:54:45.8470456Z Download action repository 'microsoft/setup-msbuild@v2' (SHA:6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce)
+2025-11-10T12:54:46.0310774Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2025-11-10T12:54:46.3495783Z Complete job name: Build and Test (Unsigned) (windows-latest)
+2025-11-10T12:54:46.4890703Z ##[group]Run actions/checkout@v4
+2025-11-10T12:54:46.4891988Z with:
+2025-11-10T12:54:46.4892501Z   submodules: recursive
+2025-11-10T12:54:46.4893054Z   fetch-depth: 0
+2025-11-10T12:54:46.4893588Z   repository: rebuildup/Ae_sep_color
+2025-11-10T12:54:46.4894503Z   token: ***
+2025-11-10T12:54:46.4894988Z   ssh-strict: true
+2025-11-10T12:54:46.4895473Z   ssh-user: git
+2025-11-10T12:54:46.4895989Z   persist-credentials: true
+2025-11-10T12:54:46.4896561Z   clean: true
+2025-11-10T12:54:46.4897066Z   sparse-checkout-cone-mode: true
+2025-11-10T12:54:46.4897679Z   fetch-tags: false
+2025-11-10T12:54:46.4898174Z   show-progress: true
+2025-11-10T12:54:46.4898706Z   lfs: false
+2025-11-10T12:54:46.4899124Z   set-safe-directory: true
+2025-11-10T12:54:46.4899801Z ##[endgroup]
+2025-11-10T12:54:46.6528391Z Syncing repository: rebuildup/Ae_sep_color
+2025-11-10T12:54:46.6530251Z ##[group]Getting Git version info
+2025-11-10T12:54:46.6531196Z Working directory is 'D:\a\Ae_sep_color\Ae_sep_color'
+2025-11-10T12:54:46.7730862Z [command]"C:\Program Files\Git\bin\git.exe" version
+2025-11-10T12:54:47.1885170Z git version 2.51.2.windows.1
+2025-11-10T12:54:47.1937388Z ##[endgroup]
+2025-11-10T12:54:47.1958363Z Temporarily overriding HOME='D:\a\_temp\08682e9e-2a90-438b-bbba-95045b8010b6' before making global git config changes
+2025-11-10T12:54:47.1968788Z Adding repository directory to the temporary git global config as a safe directory
+2025-11-10T12:54:47.1970913Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\Ae_sep_color\Ae_sep_color
+2025-11-10T12:54:47.2492552Z Deleting the contents of 'D:\a\Ae_sep_color\Ae_sep_color'
+2025-11-10T12:54:47.2499192Z ##[group]Initializing the repository
+2025-11-10T12:54:47.2508716Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\Ae_sep_color\Ae_sep_color
+2025-11-10T12:54:47.3335085Z Initialized empty Git repository in D:/a/Ae_sep_color/Ae_sep_color/.git/
+2025-11-10T12:54:47.3384429Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/rebuildup/Ae_sep_color
+2025-11-10T12:54:47.3993478Z ##[endgroup]
+2025-11-10T12:54:47.3995462Z ##[group]Disabling automatic garbage collection
+2025-11-10T12:54:47.4004256Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+2025-11-10T12:54:47.4360010Z ##[endgroup]
+2025-11-10T12:54:47.4362268Z ##[group]Setting up auth
+2025-11-10T12:54:47.4372238Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2025-11-10T12:54:47.4664584Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2025-11-10T12:54:48.8936842Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2025-11-10T12:54:48.9244561Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2025-11-10T12:54:49.4343796Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2025-11-10T12:54:49.4678273Z ##[endgroup]
+2025-11-10T12:54:49.4679161Z ##[group]Fetching the repository
+2025-11-10T12:54:49.4693824Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+2025-11-10T12:54:59.8336496Z From https://github.com/rebuildup/Ae_sep_color
+2025-11-10T12:54:59.8337217Z  * [new branch]      main       -> origin/main
+2025-11-10T12:54:59.8674225Z [command]"C:\Program Files\Git\bin\git.exe" branch --list --remote origin/main
+2025-11-10T12:54:59.8987803Z   origin/main
+2025-11-10T12:54:59.9039898Z [command]"C:\Program Files\Git\bin\git.exe" rev-parse refs/remotes/origin/main
+2025-11-10T12:54:59.9367833Z 2d503a5a0ddb68325d68a63035e03055a1945d92
+2025-11-10T12:54:59.9401986Z ##[endgroup]
+2025-11-10T12:54:59.9402527Z ##[group]Determining the checkout info
+2025-11-10T12:54:59.9403994Z ##[endgroup]
+2025-11-10T12:54:59.9419295Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+2025-11-10T12:54:59.9818528Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+2025-11-10T12:55:00.0157825Z ##[group]Checking out the ref
+2025-11-10T12:55:00.0176488Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force -B main refs/remotes/origin/main
+2025-11-10T12:55:01.3782741Z Updating files:  55% (66/120)
+2025-11-10T12:55:01.3784578Z Updating files:  56% (68/120)
+2025-11-10T12:55:01.3788848Z Updating files:  57% (69/120)
+2025-11-10T12:55:01.3792201Z Updating files:  58% (70/120)
+2025-11-10T12:55:01.3795656Z Updating files:  59% (71/120)
+2025-11-10T12:55:01.3808331Z Updating files:  60% (72/120)
+2025-11-10T12:55:01.3813099Z Updating files:  61% (74/120)
+2025-11-10T12:55:01.3815560Z Updating files:  62% (75/120)
+2025-11-10T12:55:01.3818884Z Updating files:  63% (76/120)
+2025-11-10T12:55:01.3826044Z Updating files:  64% (77/120)
+2025-11-10T12:55:01.4257626Z Updating files:  65% (78/120)
+2025-11-10T12:55:01.4258407Z Updating files:  66% (80/120)
+2025-11-10T12:55:01.4261631Z Updating files:  67% (81/120)
+2025-11-10T12:55:01.4267416Z Updating files:  68% (82/120)
+2025-11-10T12:55:01.4335209Z Updating files:  69% (83/120)
+2025-11-10T12:55:01.4340767Z Updating files:  70% (84/120)
+2025-11-10T12:55:01.4346625Z Updating files:  71% (86/120)
+2025-11-10T12:55:01.4349146Z Updating files:  72% (87/120)
+2025-11-10T12:55:01.4352365Z Updating files:  73% (88/120)
+2025-11-10T12:55:01.4354925Z Updating files:  74% (89/120)
+2025-11-10T12:55:01.4361721Z Updating files:  75% (90/120)
+2025-11-10T12:55:01.4364285Z Updating files:  76% (92/120)
+2025-11-10T12:55:01.4367459Z Updating files:  77% (93/120)
+2025-11-10T12:55:01.4369987Z Updating files:  78% (94/120)
+2025-11-10T12:55:01.4372637Z Updating files:  79% (95/120)
+2025-11-10T12:55:01.4377035Z Updating files:  80% (96/120)
+2025-11-10T12:55:01.4379594Z Updating files:  81% (98/120)
+2025-11-10T12:55:01.4381696Z Updating files:  82% (99/120)
+2025-11-10T12:55:01.4384318Z Updating files:  83% (100/120)
+2025-11-10T12:55:01.4386695Z Updating files:  84% (101/120)
+2025-11-10T12:55:01.4390559Z Updating files:  85% (102/120)
+2025-11-10T12:55:01.4392911Z Updating files:  86% (104/120)
+2025-11-10T12:55:01.4396480Z Updating files:  87% (105/120)
+2025-11-10T12:55:01.4399538Z Updating files:  88% (106/120)
+2025-11-10T12:55:01.4402413Z Updating files:  89% (107/120)
+2025-11-10T12:55:01.4438999Z Updating files:  90% (108/120)
+2025-11-10T12:55:01.4478122Z Updating files:  91% (110/120)
+2025-11-10T12:55:01.4485314Z Updating files:  92% (111/120)
+2025-11-10T12:55:01.4510445Z Updating files:  93% (112/120)
+2025-11-10T12:55:01.4517002Z Updating files:  94% (113/120)
+2025-11-10T12:55:01.4521686Z Updating files:  95% (114/120)
+2025-11-10T12:55:01.4524295Z Updating files:  96% (116/120)
+2025-11-10T12:55:01.4527262Z Updating files:  97% (117/120)
+2025-11-10T12:55:01.4533318Z Updating files:  98% (118/120)
+2025-11-10T12:55:01.4536277Z Updating files:  99% (119/120)
+2025-11-10T12:55:01.4536651Z Updating files: 100% (120/120)
+2025-11-10T12:55:01.4536985Z Updating files: 100% (120/120), done.
+2025-11-10T12:55:01.4685910Z branch 'main' set up to track 'origin/main'.
+2025-11-10T12:55:01.4713846Z Switched to a new branch 'main'
+2025-11-10T12:55:01.4889537Z ##[endgroup]
+2025-11-10T12:55:01.4889904Z ##[group]Setting up auth for fetching submodules
+2025-11-10T12:55:01.4901088Z [command]"C:\Program Files\Git\bin\git.exe" config --global http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2025-11-10T12:55:01.5223838Z [command]"C:\Program Files\Git\bin\git.exe" config --global --unset-all url.https://github.com/.insteadOf
+2025-11-10T12:55:01.5539716Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add url.https://github.com/.insteadOf git@github.com:
+2025-11-10T12:55:01.5845111Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add url.https://github.com/.insteadOf org-176191237@github.com:
+2025-11-10T12:55:01.6135881Z ##[endgroup]
+2025-11-10T12:55:01.6136201Z ##[group]Fetching submodules
+2025-11-10T12:55:01.6146524Z [command]"C:\Program Files\Git\bin\git.exe" submodule sync --recursive
+2025-11-10T12:55:02.1358510Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 submodule update --init --force --recursive
+2025-11-10T12:55:02.6765412Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local gc.auto 0"
+2025-11-10T12:55:03.1631233Z ##[endgroup]
+2025-11-10T12:55:03.1631597Z ##[group]Persisting credentials for submodules
+2025-11-10T12:55:03.1644722Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'url\.https\:\/\/github\.com\/\.insteadOf' && git config --local --unset-all 'url.https://github.com/.insteadOf' || :\""
+2025-11-10T12:55:03.7027816Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local 'http.https://github.com/.extraheader' 'AUTHORIZATION: basic ***' && git config --local --show-origin --name-only --get-regexp remote.origin.url\""
+2025-11-10T12:55:04.2271248Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --add 'url.https://github.com/.insteadOf' 'git@github.com:'"
+2025-11-10T12:55:04.7653849Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --add 'url.https://github.com/.insteadOf' 'org-176191237@github.com:'"
+2025-11-10T12:55:05.2583852Z ##[endgroup]
+2025-11-10T12:55:05.3002196Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+2025-11-10T12:55:05.3262797Z 2d503a5a0ddb68325d68a63035e03055a1945d92
+2025-11-10T12:55:05.3649096Z ##[group]Run microsoft/setup-msbuild@v2
+2025-11-10T12:55:05.3649396Z with:
+2025-11-10T12:55:05.3649580Z   msbuild-architecture: x86
+2025-11-10T12:55:05.3649778Z ##[endgroup]
+2025-11-10T12:55:05.5135981Z [command]C:\ProgramData\Chocolatey\bin\vswhere.exe -products * -requires Microsoft.Component.MSBuild -property installationPath -latest
+2025-11-10T12:55:06.4817680Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise
+2025-11-10T12:55:06.5152278Z ##[group]Run $REPO_ROOT = Get-Location
+2025-11-10T12:55:06.5152703Z [36;1m$REPO_ROOT = Get-Location[0m
+2025-11-10T12:55:06.5152947Z [36;1m$PROJECT_DIR = $REPO_ROOT[0m
+2025-11-10T12:55:06.5153151Z [36;1m[0m
+2025-11-10T12:55:06.5153342Z [36;1mif (Test-Path "Template\sep_color") {[0m
+2025-11-10T12:55:06.5153682Z [36;1m  $PROJECT_DIR = Join-Path $REPO_ROOT "Template\sep_color"[0m
+2025-11-10T12:55:06.5154027Z [36;1m} elseif (Test-Path "sep_color") {[0m
+2025-11-10T12:55:06.5154311Z [36;1m  $PROJECT_DIR = Join-Path $REPO_ROOT "sep_color"[0m
+2025-11-10T12:55:06.5154558Z [36;1m}[0m
+2025-11-10T12:55:06.5154697Z [36;1m[0m
+2025-11-10T12:55:06.5154888Z [36;1m$BUILD_DIR = Join-Path $PROJECT_DIR "Win"[0m
+2025-11-10T12:55:06.5155258Z [36;1m$EXPECTED_SDK_PATH = (Get-Item (Join-Path $BUILD_DIR "..\..\..")).FullName[0m
+2025-11-10T12:55:06.5155581Z [36;1m[0m
+2025-11-10T12:55:06.5155987Z [36;1mWrite-Output "project_dir=$PROJECT_DIR" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8[0m
+2025-11-10T12:55:06.5156597Z [36;1mWrite-Output "build_dir=$BUILD_DIR" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8[0m
+2025-11-10T12:55:06.5157231Z [36;1mWrite-Output "expected_sdk_path=$EXPECTED_SDK_PATH" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8[0m
+2025-11-10T12:55:06.6936904Z shell: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.EXE -command ". '{0}'"
+2025-11-10T12:55:06.6937443Z ##[endgroup]
+2025-11-10T12:55:07.1038251Z ##[group]Run if [ "win" == "mac" ]; then
+2025-11-10T12:55:07.1038607Z [36;1mif [ "win" == "mac" ]; then[0m
+2025-11-10T12:55:07.1038872Z [36;1m  echo "project_dir=" >> $GITHUB_OUTPUT[0m
+2025-11-10T12:55:07.1039158Z [36;1m  echo "build_dir=" >> $GITHUB_OUTPUT[0m
+2025-11-10T12:55:07.1039438Z [36;1m  echo "expected_sdk_path=" >> $GITHUB_OUTPUT[0m
+2025-11-10T12:55:07.1039673Z [36;1melse[0m
+2025-11-10T12:55:07.1039922Z [36;1m  echo "project_dir=D:\a\Ae_sep_color\Ae_sep_color" >> $GITHUB_OUTPUT[0m
+2025-11-10T12:55:07.1040325Z [36;1m  echo "build_dir=D:\a\Ae_sep_color\Ae_sep_color\Win" >> $GITHUB_OUTPUT[0m
+2025-11-10T12:55:07.1040669Z [36;1m  echo "expected_sdk_path=D:\a" >> $GITHUB_OUTPUT[0m
+2025-11-10T12:55:07.1040917Z [36;1mfi[0m
+2025-11-10T12:55:07.1055155Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+2025-11-10T12:55:07.1055510Z ##[endgroup]
+2025-11-10T12:55:07.2658145Z ##[group]Run $ErrorActionPreference = "Stop"
+2025-11-10T12:55:07.2659000Z [36;1m$ErrorActionPreference = "Stop"[0m
+2025-11-10T12:55:07.2659385Z [36;1mfunction LogInfo([string]$Message) { Write-Output ("[INFO] {0}" -f $Message) }[0m
+2025-11-10T12:55:07.2659875Z [36;1mfunction LogWarn([string]$Message) { Write-Output ("[WARN] {0}" -f $Message) }[0m
+2025-11-10T12:55:07.2660353Z [36;1mfunction LogError([string]$Message) { Write-Output ("[ERROR] {0}" -f $Message) }[0m
+2025-11-10T12:55:07.2660730Z [36;1mfunction LogBlank() { Write-Output "" }[0m
+2025-11-10T12:55:07.2660961Z [36;1m[0m
+2025-11-10T12:55:07.2661116Z [36;1m$EXPECTED_SDK_PATH = "D:\a"[0m
+2025-11-10T12:55:07.2661314Z [36;1m[0m
+2025-11-10T12:55:07.2661479Z [36;1m# AeSDKが既に存在するか確認[0m
+2025-11-10T12:55:07.2661846Z [36;1mif ((Test-Path "$EXPECTED_SDK_PATH\Headers") -and (Test-Path "$EXPECTED_SDK_PATH\Util")) {[0m
+2025-11-10T12:55:07.2662338Z [36;1m  LogInfo "AeSDK already exists: $EXPECTED_SDK_PATH"[0m
+2025-11-10T12:55:07.2662602Z [36;1m  exit 0[0m
+2025-11-10T12:55:07.2662932Z [36;1m}[0m
+2025-11-10T12:55:07.2663070Z [36;1m[0m
+2025-11-10T12:55:07.2663222Z [36;1m# GitHub APIを使用してリリース情報を取得[0m
+2025-11-10T12:55:07.2663428Z [36;1m# リリースタグの候補（優先順位順）[0m
+2025-11-10T12:55:07.2663708Z [36;1m$RELEASE_TAG_CANDIDATES = @("sdk", "ae-sdk_25.6_61", "v25.6.61", "25.6.61")[0m
+2025-11-10T12:55:07.2664053Z [36;1m$REPO = "rebuildup/my-ae-sdk-storage"[0m
+2025-11-10T12:55:07.2664280Z [36;1m[0m
+2025-11-10T12:55:07.2664467Z [36;1mLogInfo "Download AeSDK from GitHub releases"[0m
+2025-11-10T12:55:07.2664750Z [36;1mWrite-Output "   Repository: $REPO"[0m
+2025-11-10T12:55:07.2665062Z [36;1mWrite-Output "   SDK file : AfterEffectsSDK_25.6_61_win.zip"[0m
+2025-11-10T12:55:07.2665339Z [36;1m[0m
+2025-11-10T12:55:07.2665477Z [36;1m# トークンの確認[0m
+2025-11-10T12:55:07.2665650Z [36;1mif (-not $env:GITHUB_TOKEN) {[0m
+2025-11-10T12:55:07.2665892Z [36;1m  LogError "GITHUB_TOKEN is not defined"[0m
+2025-11-10T12:55:07.2666256Z [36;1m  Write-Output "   Please configure AE_SDK_DOWNLOAD_TOKEN in GitHub Secrets"[0m
+2025-11-10T12:55:07.2666587Z [36;1m  exit 1[0m
+2025-11-10T12:55:07.2666735Z [36;1m}[0m
+2025-11-10T12:55:07.2666870Z [36;1m[0m
+2025-11-10T12:55:07.2667004Z [36;1m# リリース情報を取得（複数のタグ候補を試す）[0m
+2025-11-10T12:55:07.2667198Z [36;1m$headers = @{[0m
+2025-11-10T12:55:07.2667408Z [36;1m  Authorization = "token $env:GITHUB_TOKEN"[0m
+2025-11-10T12:55:07.2667701Z [36;1m  Accept = "application/vnd.github.v3+json"[0m
+2025-11-10T12:55:07.2667941Z [36;1m}[0m
+2025-11-10T12:55:07.2668071Z [36;1m[0m
+2025-11-10T12:55:07.2668215Z [36;1m$releaseJson = $null[0m
+2025-11-10T12:55:07.2668402Z [36;1m$foundTag = $null[0m
+2025-11-10T12:55:07.2668575Z [36;1m[0m
+2025-11-10T12:55:07.2668777Z [36;1mforeach ($RELEASE_TAG in $RELEASE_TAG_CANDIDATES) {[0m
+2025-11-10T12:55:07.2669117Z [36;1m  LogInfo "Requesting release metadata (tag: $RELEASE_TAG)"[0m
+2025-11-10T12:55:07.2669559Z [36;1m  $releaseUrl = "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"[0m
+2025-11-10T12:55:07.2669914Z [36;1m[0m
+2025-11-10T12:55:07.2670047Z [36;1m  try {[0m
+2025-11-10T12:55:07.2670370Z [36;1m    $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -ErrorAction Stop[0m
+2025-11-10T12:55:07.2670762Z [36;1m    $foundTag = $RELEASE_TAG[0m
+2025-11-10T12:55:07.2670995Z [36;1m    LogInfo "Release found: $foundTag"[0m
+2025-11-10T12:55:07.2671225Z [36;1m    break[0m
+2025-11-10T12:55:07.2671380Z [36;1m  } catch {[0m
+2025-11-10T12:55:07.2671620Z [36;1m    $statusCode = $_.Exception.Response.StatusCode.value__[0m
+2025-11-10T12:55:07.2671998Z [36;1m    LogWarn ("Tag '{0}' not found (HTTP {1})" -f $RELEASE_TAG, $statusCode)[0m
+2025-11-10T12:55:07.2672287Z [36;1m  }[0m
+2025-11-10T12:55:07.2672483Z [36;1m}[0m
+2025-11-10T12:55:07.2672619Z [36;1m[0m
+2025-11-10T12:55:07.2672765Z [36;1mif (-not $releaseJson) {[0m
+2025-11-10T12:55:07.2674910Z [36;1m  LogWarn "Falling back to latest release"[0m
+2025-11-10T12:55:07.2675356Z [36;1m  $releaseUrl = "https://api.github.com/repos/$REPO/releases/latest"[0m
+2025-11-10T12:55:07.2675694Z [36;1m[0m
+2025-11-10T12:55:07.2675834Z [36;1m  try {[0m
+2025-11-10T12:55:07.2676179Z [36;1m    $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -ErrorAction Stop[0m
+2025-11-10T12:55:07.2676598Z [36;1m    $foundTag = $releaseJson.tag_name[0m
+2025-11-10T12:55:07.2676867Z [36;1m    LogInfo "Latest release located: $foundTag"[0m
+2025-11-10T12:55:07.2677117Z [36;1m  } catch {[0m
+2025-11-10T12:55:07.2677329Z [36;1m    LogError "Unable to fetch release metadata"[0m
+2025-11-10T12:55:07.2677689Z [36;1m    LogError ("HTTP status: {0}" -f $_.Exception.Response.StatusCode.value__)[0m
+2025-11-10T12:55:07.2678103Z [36;1m    LogError ("Message    : {0}" -f $_.Exception.Message)[0m
+2025-11-10T12:55:07.2678380Z [36;1m    LogBlank[0m
+2025-11-10T12:55:07.2678580Z [36;1m    Write-Output "Possible causes:"[0m
+2025-11-10T12:55:07.2678916Z [36;1m    Write-Output "  1. Repository missing or private without access"[0m
+2025-11-10T12:55:07.2679931Z [36;1m    Write-Output ("  2. Tags not found (checked: {0})" -f ($RELEASE_TAG_CANDIDATES -join ", "))[0m
+2025-11-10T12:55:07.2680374Z [36;1m    Write-Output "  3. GitHub token lacks required scopes"[0m
+2025-11-10T12:55:07.2680738Z [36;1m    Write-Output "  4. AE_SDK_DOWNLOAD_TOKEN is not configured"[0m
+2025-11-10T12:55:07.2681016Z [36;1m    exit 1[0m
+2025-11-10T12:55:07.2681173Z [36;1m  }[0m
+2025-11-10T12:55:07.2681315Z [36;1m}[0m
+2025-11-10T12:55:07.2681442Z [36;1m[0m
+2025-11-10T12:55:07.2681703Z [36;1m$releaseJson.assets | ForEach-Object { Write-Output "   - $($_.name)" }[0m
+2025-11-10T12:55:07.2682012Z [36;1m[0m
+2025-11-10T12:55:07.2682162Z [36;1m# アセットのダウンロードURLを取得[0m
+2025-11-10T12:55:07.2682588Z [36;1m$asset = $releaseJson.assets | Where-Object { $_.name -eq "AfterEffectsSDK_25.6_61_win.zip" } | Select-Object -First 1[0m
+2025-11-10T12:55:07.2683022Z [36;1m[0m
+2025-11-10T12:55:07.2683170Z [36;1mif (-not $asset) {[0m
+2025-11-10T12:55:07.2683467Z [36;1m  LogError ("SDK asset not found: {0}" -f "AfterEffectsSDK_25.6_61_win.zip")[0m
+2025-11-10T12:55:07.2683806Z [36;1m  Write-Output "Available assets:"[0m
+2025-11-10T12:55:07.2684198Z [36;1m  $releaseJson.assets | ForEach-Object { Write-Output "   - $($_.name)" }[0m
+2025-11-10T12:55:07.2684519Z [36;1m  exit 1[0m
+2025-11-10T12:55:07.2684661Z [36;1m}[0m
+2025-11-10T12:55:07.2684795Z [36;1m[0m
+2025-11-10T12:55:07.2684946Z [36;1m$apiDownloadUrl = $asset.url[0m
+2025-11-10T12:55:07.2685232Z [36;1m$browserDownloadUrl = $asset.browser_download_url[0m
+2025-11-10T12:55:07.2685492Z [36;1m[0m
+2025-11-10T12:55:07.2685641Z [36;1mif (-not $apiDownloadUrl) {[0m
+2025-11-10T12:55:07.2685910Z [36;1m  LogError "Asset is missing an API download URL"[0m
+2025-11-10T12:55:07.2686225Z [36;1m  Write-Output ($asset | ConvertTo-Json -Depth 5)[0m
+2025-11-10T12:55:07.2686478Z [36;1m  exit 1[0m
+2025-11-10T12:55:07.2686629Z [36;1m}[0m
+2025-11-10T12:55:07.2686762Z [36;1m[0m
+2025-11-10T12:55:07.2686979Z [36;1mLogInfo ("Download URL (API): {0}" -f $apiDownloadUrl)[0m
+2025-11-10T12:55:07.2687275Z [36;1mif ($browserDownloadUrl) {[0m
+2025-11-10T12:55:07.2687567Z [36;1m  LogInfo ("Download URL (browser): {0}" -f $browserDownloadUrl)[0m
+2025-11-10T12:55:07.2687852Z [36;1m}[0m
+2025-11-10T12:55:07.2687985Z [36;1m[0m
+2025-11-10T12:55:07.2688151Z [36;1mLogInfo "Downloading SDK archive..."[0m
+2025-11-10T12:55:07.2688393Z [36;1m$outputPath = "AE_SDK.zip"[0m
+2025-11-10T12:55:07.2688607Z [36;1m$downloadHeaders = @{[0m
+2025-11-10T12:55:07.2688839Z [36;1m  Authorization = "token $env:GITHUB_TOKEN"[0m
+2025-11-10T12:55:07.2689112Z [36;1m  Accept = "application/octet-stream"[0m
+2025-11-10T12:55:07.2689361Z [36;1m  "User-Agent" = "GitHub-Actions"[0m
+2025-11-10T12:55:07.2689570Z [36;1m}[0m
+2025-11-10T12:55:07.2689702Z [36;1m[0m
+2025-11-10T12:55:07.2689836Z [36;1mtry {[0m
+2025-11-10T12:55:07.2690640Z [36;1m  Invoke-WebRequest -Uri $apiDownloadUrl -Headers $downloadHeaders -OutFile $outputPath -ErrorAction Stop[0m
+2025-11-10T12:55:07.2691118Z [36;1m} catch {[0m
+2025-11-10T12:55:07.2691374Z [36;1m  LogWarn ("API download failed: {0}" -f $_.Exception.Message)[0m
+2025-11-10T12:55:07.2691686Z [36;1m  if ($browserDownloadUrl) {[0m
+2025-11-10T12:55:07.2691992Z [36;1m    LogInfo "Retrying with browser download URL (unauthenticated)"[0m
+2025-11-10T12:55:07.2692290Z [36;1m    try {[0m
+2025-11-10T12:55:07.2692618Z [36;1m      Invoke-WebRequest -Uri $browserDownloadUrl -OutFile $outputPath -ErrorAction Stop[0m
+2025-11-10T12:55:07.2692986Z [36;1m    } catch {[0m
+2025-11-10T12:55:07.2693179Z [36;1m      LogError "SDK download failed"[0m
+2025-11-10T12:55:07.2693517Z [36;1m      LogError ("HTTP status: {0}" -f $_.Exception.Response.StatusCode.value__)[0m
+2025-11-10T12:55:07.2694339Z [36;1m      LogError ("Message    : {0}" -f $_.Exception.Message)[0m
+2025-11-10T12:55:07.2694614Z [36;1m      exit 1[0m
+2025-11-10T12:55:07.2694891Z [36;1m    }[0m
+2025-11-10T12:55:07.2695038Z [36;1m  } else {[0m
+2025-11-10T12:55:07.2695195Z [36;1m    exit 1[0m
+2025-11-10T12:55:07.2695340Z [36;1m  }[0m
+2025-11-10T12:55:07.2695478Z [36;1m}[0m
+2025-11-10T12:55:07.2695604Z [36;1m[0m
+2025-11-10T12:55:07.2695868Z [36;1mif (-not (Test-Path $outputPath) -or (Get-Item $outputPath).Length -eq 0) {[0m
+2025-11-10T12:55:07.2696248Z [36;1m  LogError "Downloaded file is missing or empty"[0m
+2025-11-10T12:55:07.2696492Z [36;1m  exit 1[0m
+2025-11-10T12:55:07.2696637Z [36;1m}[0m
+2025-11-10T12:55:07.2696760Z [36;1m[0m
+2025-11-10T12:55:07.2696944Z [36;1m$fileSize = (Get-Item $outputPath).Length / 1MB[0m
+2025-11-10T12:55:07.2697303Z [36;1mLogInfo ("Download complete ({0} MB)" -f [math]::Round($fileSize, 2))[0m
+2025-11-10T12:55:07.2697602Z [36;1m[0m
+2025-11-10T12:55:07.2697765Z [36;1mLogInfo "Extracting SDK archive..."[0m
+2025-11-10T12:55:07.2698130Z [36;1m$extractDir = Join-Path $env:RUNNER_TEMP ("ae_sdk_" + [Guid]::NewGuid().ToString())[0m
+2025-11-10T12:55:07.2698579Z [36;1mNew-Item -ItemType Directory -Path $extractDir -Force | Out-Null[0m
+2025-11-10T12:55:07.2698880Z [36;1m[0m
+2025-11-10T12:55:07.2699013Z [36;1mtry {[0m
+2025-11-10T12:55:07.2699342Z [36;1m  Expand-Archive -Path $outputPath -DestinationPath $extractDir -Force -ErrorAction Stop[0m
+2025-11-10T12:55:07.2699727Z [36;1m} catch {[0m
+2025-11-10T12:55:07.2699990Z [36;1m  LogError ("Failed to extract SDK archive: {0}" -f $_.Exception.Message)[0m
+2025-11-10T12:55:07.2700516Z [36;1m  Get-ChildItem $extractDir -Recurse | Select-Object -First 40 | Format-Table FullName, LastWriteTime[0m
+2025-11-10T12:55:07.2700927Z [36;1m  exit 1[0m
+2025-11-10T12:55:07.2701066Z [36;1m}[0m
+2025-11-10T12:55:07.2701197Z [36;1m[0m
+2025-11-10T12:55:07.2701351Z [36;1mfunction Get-SevenZipPath {[0m
+2025-11-10T12:55:07.2701565Z [36;1m  $candidates = @([0m
+2025-11-10T12:55:07.2701777Z [36;1m    "$env:ProgramFiles\7-Zip\7z.exe",[0m
+2025-11-10T12:55:07.2702045Z [36;1m    "$env:ProgramFiles(x86)\7-Zip\7z.exe",[0m
+2025-11-10T12:55:07.2702302Z [36;1m    "C:\Program Files\7-Zip\7z.exe"[0m
+2025-11-10T12:55:07.2702522Z [36;1m  )[0m
+2025-11-10T12:55:07.2702693Z [36;1m  foreach ($candidate in $candidates) {[0m
+2025-11-10T12:55:07.2702983Z [36;1m    if (Test-Path $candidate) { return $candidate }[0m
+2025-11-10T12:55:07.2703234Z [36;1m  }[0m
+2025-11-10T12:55:07.2703378Z [36;1m  return $null[0m
+2025-11-10T12:55:07.2703550Z [36;1m}[0m
+2025-11-10T12:55:07.2703682Z [36;1m[0m
+2025-11-10T12:55:07.2703849Z [36;1m$SevenZipPath = Get-SevenZipPath[0m
+2025-11-10T12:55:07.2704065Z [36;1m[0m
+2025-11-10T12:55:07.2704229Z [36;1mfunction Expand-ArchiveSmart {[0m
+2025-11-10T12:55:07.2704453Z [36;1m  param([0m
+2025-11-10T12:55:07.2704614Z [36;1m    [string]$Archive,[0m
+2025-11-10T12:55:07.2704819Z [36;1m    [string]$Destination[0m
+2025-11-10T12:55:07.2705016Z [36;1m  )[0m
+2025-11-10T12:55:07.2705236Z [36;1m[0m
+2025-11-10T12:55:07.2705416Z [36;1m  $lower = $Archive.ToLowerInvariant()[0m
+2025-11-10T12:55:07.2705641Z [36;1m[0m
+2025-11-10T12:55:07.2705785Z [36;1m  if ($lower.EndsWith(".zip")) {[0m
+2025-11-10T12:55:07.2706141Z [36;1m    Expand-Archive -LiteralPath $Archive -DestinationPath $Destination -Force[0m
+2025-11-10T12:55:07.2706487Z [36;1m    return $true[0m
+2025-11-10T12:55:07.2706655Z [36;1m  }[0m
+2025-11-10T12:55:07.2706789Z [36;1m[0m
+2025-11-10T12:55:07.2706931Z [36;1m  if ($SevenZipPath) {[0m
+2025-11-10T12:55:07.2707214Z [36;1m    & $SevenZipPath x $Archive ("-o" + $Destination) -y | Out-Null[0m
+2025-11-10T12:55:07.2707502Z [36;1m    return $true[0m
+2025-11-10T12:55:07.2707671Z [36;1m  }[0m
+2025-11-10T12:55:07.2707821Z [36;1m[0m
+2025-11-10T12:55:07.2707974Z [36;1m  if ($lower.EndsWith(".tar")) {[0m
+2025-11-10T12:55:07.2708205Z [36;1m    & tar -xf $Archive -C $Destination[0m
+2025-11-10T12:55:07.2708433Z [36;1m    return $true[0m
+2025-11-10T12:55:07.2708603Z [36;1m  }[0m
+2025-11-10T12:55:07.2708814Z [36;1m[0m
+2025-11-10T12:55:07.2709035Z [36;1m  if ($lower.EndsWith(".tar.gz") -or $lower.EndsWith(".tgz")) {[0m
+2025-11-10T12:55:07.2709348Z [36;1m    & tar -xzf $Archive -C $Destination[0m
+2025-11-10T12:55:07.2709569Z [36;1m    return $true[0m
+2025-11-10T12:55:07.2709733Z [36;1m  }[0m
+2025-11-10T12:55:07.2709863Z [36;1m[0m
+2025-11-10T12:55:07.2710149Z [36;1m  if ($lower.EndsWith(".tar.bz2") -or $lower.EndsWith(".tbz") -or $lower.EndsWith(".tbz2")) {[0m
+2025-11-10T12:55:07.2710530Z [36;1m    & tar -xjf $Archive -C $Destination[0m
+2025-11-10T12:55:07.2710749Z [36;1m    return $true[0m
+2025-11-10T12:55:07.2710914Z [36;1m  }[0m
+2025-11-10T12:55:07.2711050Z [36;1m[0m
+2025-11-10T12:55:07.2711259Z [36;1m  if ($lower.EndsWith(".tar.xz") -or $lower.EndsWith(".txz")) {[0m
+2025-11-10T12:55:07.2712060Z [36;1m    & tar -xJf $Archive -C $Destination[0m
+2025-11-10T12:55:07.2712450Z [36;1m    return $true[0m
+2025-11-10T12:55:07.2712629Z [36;1m  }[0m
+2025-11-10T12:55:07.2712773Z [36;1m[0m
+2025-11-10T12:55:07.2712985Z [36;1m  LogWarn ("Unsupported archive format: {0}" -f $Archive)[0m
+2025-11-10T12:55:07.2713267Z [36;1m  return $false[0m
+2025-11-10T12:55:07.2713433Z [36;1m}[0m
+2025-11-10T12:55:07.2713567Z [36;1m[0m
+2025-11-10T12:55:07.2713730Z [36;1mfunction Expand-NestedArchives {[0m
+2025-11-10T12:55:07.2713961Z [36;1m  param([string]$Root)[0m
+2025-11-10T12:55:07.2714174Z [36;1m  for ($i = 0; $i -lt 6; $i++) {[0m
+2025-11-10T12:55:07.2714549Z [36;1m    $archives = Get-ChildItem -Path $Root -Recurse -File -ErrorAction SilentlyContinue |[0m
+2025-11-10T12:55:07.2715112Z [36;1m      Where-Object { $_.Name -match '\.(zip|tar|tgz|tar\.gz|tbz|tar\.bz2|txz|tar\.xz|tar\.zst|tar\.zstd|zst|zstd)$' }[0m
+2025-11-10T12:55:07.2715539Z [36;1m    if (-not $archives) { break }[0m
+2025-11-10T12:55:07.2715758Z [36;1m[0m
+2025-11-10T12:55:07.2715899Z [36;1m    $expanded = $false[0m
+2025-11-10T12:55:07.2716125Z [36;1m    foreach ($archive in $archives) {[0m
+2025-11-10T12:55:07.2716410Z [36;1m      if (-not (Test-Path $archive.FullName)) { continue }[0m
+2025-11-10T12:55:07.2717067Z [36;1m      $dest = Join-Path $archive.Directory.FullName ("nested_{0}_{1}" -f $i, [Guid]::NewGuid().ToString('N'))[0m
+2025-11-10T12:55:07.2717560Z [36;1m      New-Item -ItemType Directory -Force -Path $dest | Out-Null[0m
+2025-11-10T12:55:07.2717977Z [36;1m      if (Expand-ArchiveSmart -Archive $archive.FullName -Destination $dest) {[0m
+2025-11-10T12:55:07.2718431Z [36;1m        Remove-Item $archive.FullName -Force -ErrorAction SilentlyContinue[0m
+2025-11-10T12:55:07.2718763Z [36;1m        $expanded = $true[0m
+2025-11-10T12:55:07.2718958Z [36;1m      } else {[0m
+2025-11-10T12:55:07.2719226Z [36;1m        Remove-Item -Recurse -Force $dest -ErrorAction SilentlyContinue[0m
+2025-11-10T12:55:07.2719528Z [36;1m      }[0m
+2025-11-10T12:55:07.2719671Z [36;1m    }[0m
+2025-11-10T12:55:07.2719930Z [36;1m[0m
+2025-11-10T12:55:07.2720087Z [36;1m    if (-not $expanded) { break }[0m
+2025-11-10T12:55:07.2720302Z [36;1m  }[0m
+2025-11-10T12:55:07.2720437Z [36;1m}[0m
+2025-11-10T12:55:07.2720562Z [36;1m[0m
+2025-11-10T12:55:07.2720738Z [36;1mExpand-NestedArchives -Root $extractDir[0m
+2025-11-10T12:55:07.2720965Z [36;1m[0m
+2025-11-10T12:55:07.2721115Z [36;1mfunction Get-SdkSourceDirs {[0m
+2025-11-10T12:55:07.2721337Z [36;1m  param([string]$root)[0m
+2025-11-10T12:55:07.2721738Z [36;1m  $headersDirs = Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue |[0m
+2025-11-10T12:55:07.2722165Z [36;1m    Where-Object { $_.Name -ieq "Headers" }[0m
+2025-11-10T12:55:07.2722396Z [36;1m[0m
+2025-11-10T12:55:07.2722549Z [36;1m  foreach ($hdr in $headersDirs) {[0m
+2025-11-10T12:55:07.2722830Z [36;1m    $utilPath = Join-Path $hdr.Parent.FullName "Util"[0m
+2025-11-10T12:55:07.2723114Z [36;1m    if (Test-Path $utilPath) {[0m
+2025-11-10T12:55:07.2723346Z [36;1m      return [pscustomobject]@{[0m
+2025-11-10T12:55:07.2723659Z [36;1m        Headers = $hdr.FullName[0m
+2025-11-10T12:55:07.2723869Z [36;1m        Util    = $utilPath[0m
+2025-11-10T12:55:07.2724099Z [36;1m        Root    = $hdr.Parent.FullName[0m
+2025-11-10T12:55:07.2724321Z [36;1m      }[0m
+2025-11-10T12:55:07.2724462Z [36;1m    }[0m
+2025-11-10T12:55:07.2724604Z [36;1m  }[0m
+2025-11-10T12:55:07.2724745Z [36;1m  return $null[0m
+2025-11-10T12:55:07.2724913Z [36;1m}[0m
+2025-11-10T12:55:07.2725046Z [36;1m[0m
+2025-11-10T12:55:07.2725204Z [36;1mfunction Invoke-SdkPrepScripts {[0m
+2025-11-10T12:55:07.2725437Z [36;1m  param([string]$root)[0m
+2025-11-10T12:55:07.2725816Z [36;1m  $scripts = Get-ChildItem -Path $root -Filter "*.bat" -Recurse -ErrorAction SilentlyContinue |[0m
+2025-11-10T12:55:07.2726332Z [36;1m    Where-Object { $_.Name -match '(setup|install|extract|expand|prepare|unpack)' } |[0m
+2025-11-10T12:55:07.2726694Z [36;1m    Sort-Object FullName[0m
+2025-11-10T12:55:07.2726899Z [36;1m[0m
+2025-11-10T12:55:07.2727057Z [36;1m  foreach ($script in $scripts) {[0m
+2025-11-10T12:55:07.2727356Z [36;1m    LogInfo ("Running vendor script: {0}" -f $script.FullName)[0m
+2025-11-10T12:55:07.2727710Z [36;1m    Push-Location -LiteralPath $script.DirectoryName[0m
+2025-11-10T12:55:07.2727982Z [36;1m    try {[0m
+2025-11-10T12:55:07.2728176Z [36;1m      & cmd.exe /c "`"$($script.FullName)`""[0m
+2025-11-10T12:55:07.2728409Z [36;1m    } finally {[0m
+2025-11-10T12:55:07.2728597Z [36;1m      Pop-Location[0m
+2025-11-10T12:55:07.2728775Z [36;1m    }[0m
+2025-11-10T12:55:07.2728911Z [36;1m[0m
+2025-11-10T12:55:07.2729071Z [36;1m    if ($LASTEXITCODE -ne 0) {[0m
+2025-11-10T12:55:07.2729352Z [36;1m      LogWarn ("Script exited with code {0}" -f $LASTEXITCODE)[0m
+2025-11-10T12:55:07.2729622Z [36;1m    }[0m
+2025-11-10T12:55:07.2729763Z [36;1m[0m
+2025-11-10T12:55:07.2729927Z [36;1m    $result = Get-SdkSourceDirs -root $root[0m
+2025-11-10T12:55:07.2730184Z [36;1m    if ($result) { return $result }[0m
+2025-11-10T12:55:07.2730395Z [36;1m  }[0m
+2025-11-10T12:55:07.2730531Z [36;1m[0m
+2025-11-10T12:55:07.2730669Z [36;1m  return $null[0m
+2025-11-10T12:55:07.2730826Z [36;1m}[0m
+2025-11-10T12:55:07.2730955Z [36;1m[0m
+2025-11-10T12:55:07.2731101Z [36;1mfunction Invoke-BuildAll {[0m
+2025-11-10T12:55:07.2731316Z [36;1m  param([string]$root)[0m
+2025-11-10T12:55:07.2731892Z [36;1m  $solution = Get-ChildItem -Path $root -Recurse -Filter "BuildAll.sln" -ErrorAction SilentlyContinue |[0m
+2025-11-10T12:55:07.2732326Z [36;1m    Select-Object -First 1[0m
+2025-11-10T12:55:07.2732525Z [36;1m[0m
+2025-11-10T12:55:07.2732669Z [36;1m  if ($solution) {[0m
+2025-11-10T12:55:07.2732941Z [36;1m    LogInfo ("Building vendor solution: {0}" -f $solution.FullName)[0m
+2025-11-10T12:55:07.2733264Z [36;1m    & msbuild $solution.FullName `[0m
+2025-11-10T12:55:07.2733477Z [36;1m      /m `[0m
+2025-11-10T12:55:07.2733646Z [36;1m      /p:Configuration=Release `[0m
+2025-11-10T12:55:07.2734367Z [36;1m      /p:Platform=x64 `[0m
+2025-11-10T12:55:07.2734600Z [36;1m      /v:minimal[0m
+2025-11-10T12:55:07.2734778Z [36;1m  } else {[0m
+2025-11-10T12:55:07.2735033Z [36;1m    LogWarn "BuildAll.sln not found; skipping vendor compilation"[0m
+2025-11-10T12:55:07.2735326Z [36;1m  }[0m
+2025-11-10T12:55:07.2735466Z [36;1m}[0m
+2025-11-10T12:55:07.2735596Z [36;1m[0m
+2025-11-10T12:55:07.2735785Z [36;1m$sources = Get-SdkSourceDirs -root $extractDir[0m
+2025-11-10T12:55:07.2736047Z [36;1mif (-not $sources) {[0m
+2025-11-10T12:55:07.2736288Z [36;1m  $sources = Invoke-SdkPrepScripts -root $extractDir[0m
+2025-11-10T12:55:07.2736547Z [36;1m}[0m
+2025-11-10T12:55:07.2736903Z [36;1m[0m
+2025-11-10T12:55:07.2737045Z [36;1mif (-not $sources) {[0m
+2025-11-10T12:55:07.2737331Z [36;1m  LogError "Headers/Util directories not found inside SDK archive"[0m
+2025-11-10T12:55:07.2737829Z [36;1m  Get-ChildItem $extractDir -Recurse -Directory | Select-Object -First 40 | Format-Table FullName[0m
+2025-11-10T12:55:07.2738739Z [36;1m  exit 1[0m
+2025-11-10T12:55:07.2738896Z [36;1m}[0m
+2025-11-10T12:55:07.2739030Z [36;1m[0m
+2025-11-10T12:55:07.2739181Z [36;1m$sdkRoot = $sources.Root[0m
+2025-11-10T12:55:07.2739382Z [36;1m[0m
+2025-11-10T12:55:07.2739541Z [36;1mInvoke-BuildAll -root $sdkRoot[0m
+2025-11-10T12:55:07.2739760Z [36;1m[0m
+2025-11-10T12:55:07.2739942Z [36;1m$projectDir = "D:\a\Ae_sep_color\Ae_sep_color"[0m
+2025-11-10T12:55:07.2740249Z [36;1mif ($projectDir -and (Test-Path $projectDir)) {[0m
+2025-11-10T12:55:07.2740563Z [36;1m  $sdkTemplateRoot = Join-Path $sdkRoot "Template"[0m
+2025-11-10T12:55:07.2740938Z [36;1m  New-Item -ItemType Directory -Force -Path $sdkTemplateRoot | Out-Null[0m
+2025-11-10T12:55:07.2741404Z [36;1m  $targetTemplate = Join-Path $sdkTemplateRoot (Split-Path $projectDir -Leaf)[0m
+2025-11-10T12:55:07.2741775Z [36;1m  if (Test-Path $targetTemplate) {[0m
+2025-11-10T12:55:07.2742131Z [36;1m    Remove-Item -Recurse -Force $targetTemplate -ErrorAction SilentlyContinue[0m
+2025-11-10T12:55:07.2742469Z [36;1m  }[0m
+2025-11-10T12:55:07.2742724Z [36;1m  LogInfo ("Copying project into SDK template: {0}" -f $targetTemplate)[0m
+2025-11-10T12:55:07.2743110Z [36;1m  Copy-Item -Recurse -Force $projectDir $targetTemplate[0m
+2025-11-10T12:55:07.2743378Z [36;1m}[0m
+2025-11-10T12:55:07.2743508Z [36;1m[0m
+2025-11-10T12:55:07.2743768Z [36;1mNew-Item -ItemType Directory -Force -Path $EXPECTED_SDK_PATH | Out-Null[0m
+2025-11-10T12:55:07.2744295Z [36;1mRemove-Item -Recurse -Force (Join-Path $EXPECTED_SDK_PATH "Headers") -ErrorAction SilentlyContinue[0m
+2025-11-10T12:55:07.2744886Z [36;1mRemove-Item -Recurse -Force (Join-Path $EXPECTED_SDK_PATH "Util") -ErrorAction SilentlyContinue[0m
+2025-11-10T12:55:07.2745441Z [36;1mCopy-Item -Recurse -Force $sources.Headers (Join-Path $EXPECTED_SDK_PATH "Headers")[0m
+2025-11-10T12:55:07.2745939Z [36;1mCopy-Item -Recurse -Force $sources.Util (Join-Path $EXPECTED_SDK_PATH "Util")[0m
+2025-11-10T12:55:07.2746264Z [36;1m[0m
+2025-11-10T12:55:07.2746566Z [36;1mif ((Test-Path "$EXPECTED_SDK_PATH\Headers") -and (Test-Path "$EXPECTED_SDK_PATH\Util")) {[0m
+2025-11-10T12:55:07.2747086Z [36;1m  $headerCount = (Get-ChildItem "$EXPECTED_SDK_PATH\Headers" -File | Measure-Object).Count[0m
+2025-11-10T12:55:07.2747591Z [36;1m  $utilCount = (Get-ChildItem "$EXPECTED_SDK_PATH\Util" -File | Measure-Object).Count[0m
+2025-11-10T12:55:07.2747961Z [36;1m  LogInfo "AeSDK setup complete"[0m
+2025-11-10T12:55:07.2748302Z [36;1m  LogInfo ("Headers: {0}\Headers ({1} files)" -f $EXPECTED_SDK_PATH, $headerCount)[0m
+2025-11-10T12:55:07.2748715Z [36;1m  LogInfo ("Util    : {0}\Util ({1} files)" -f $EXPECTED_SDK_PATH, $utilCount)[0m
+2025-11-10T12:55:07.2749014Z [36;1m} else {[0m
+2025-11-10T12:55:07.2749188Z [36;1m  LogError "AeSDK setup failed"[0m
+2025-11-10T12:55:07.2749481Z [36;1m  Write-Output ("Expected path: {0}" -f $EXPECTED_SDK_PATH)[0m
+2025-11-10T12:55:07.2749877Z [36;1m  Write-Output "Presence check:"[0m
+2025-11-10T12:55:07.2750134Z [36;1m  if (Test-Path "$EXPECTED_SDK_PATH") {[0m
+2025-11-10T12:55:07.2750403Z [36;1m    Write-Output "  - Root directory exists"[0m
+2025-11-10T12:55:07.2750643Z [36;1m  } else {[0m
+2025-11-10T12:55:07.2750847Z [36;1m    Write-Output "  - Root directory is missing"[0m
+2025-11-10T12:55:07.2751090Z [36;1m  }[0m
+2025-11-10T12:55:07.2751284Z [36;1m  if (Test-Path "$EXPECTED_SDK_PATH\Headers") {[0m
+2025-11-10T12:55:07.2751550Z [36;1m    Write-Output "  - Headers\ exists"[0m
+2025-11-10T12:55:07.2751885Z [36;1m  } else {[0m
+2025-11-10T12:55:07.2752160Z [36;1m    Write-Output "  - Headers\ is missing"[0m
+2025-11-10T12:55:07.2752383Z [36;1m  }[0m
+2025-11-10T12:55:07.2752568Z [36;1m  if (Test-Path "$EXPECTED_SDK_PATH\Util") {[0m
+2025-11-10T12:55:07.2752830Z [36;1m    Write-Output "  - Util\ exists"[0m
+2025-11-10T12:55:07.2753076Z [36;1m  } else {[0m
+2025-11-10T12:55:07.2753266Z [36;1m    Write-Output "  - Util\ is missing"[0m
+2025-11-10T12:55:07.2753483Z [36;1m  }[0m
+2025-11-10T12:55:07.2753754Z [36;1m  Write-Output "Expanded directories:"[0m
+2025-11-10T12:55:07.2754049Z [36;1m  $parentDir = Split-Path -Parent $EXPECTED_SDK_PATH[0m
+2025-11-10T12:55:07.2754504Z [36;1m  Get-ChildItem $parentDir | Select-Object -First 20 | Format-Table Name, Length, LastWriteTime[0m
+2025-11-10T12:55:07.2754894Z [36;1m  exit 1[0m
+2025-11-10T12:55:07.2755034Z [36;1m}[0m
+2025-11-10T12:55:07.2755169Z [36;1m[0m
+2025-11-10T12:55:07.2755408Z [36;1mRemove-Item $outputPath -Force -ErrorAction SilentlyContinue[0m
+2025-11-10T12:55:07.2755828Z [36;1mRemove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue[0m
+2025-11-10T12:55:07.2817213Z shell: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.EXE -command ". '{0}'"
+2025-11-10T12:55:07.2817864Z env:
+2025-11-10T12:55:07.2818458Z   GITHUB_TOKEN: ***
+2025-11-10T12:55:07.2818620Z ##[endgroup]
+2025-11-10T12:55:07.6461825Z [INFO] Download AeSDK from GitHub releases
+2025-11-10T12:55:07.6463638Z    Repository: rebuildup/my-ae-sdk-storage
+2025-11-10T12:55:07.6465637Z    SDK file : AfterEffectsSDK_25.6_61_win.zip
+2025-11-10T12:55:07.6485104Z [INFO] Requesting release metadata (tag: sdk)
+2025-11-10T12:55:07.8655130Z [INFO] Release found: sdk
+2025-11-10T12:55:07.8728630Z    - AfterEffectsSDK_25.6_61_mac.zip
+2025-11-10T12:55:07.8729247Z    - AfterEffectsSDK_25.6_61_win.zip
+2025-11-10T12:55:07.8865815Z [INFO] Download URL (API): https://api.github.com/repos/rebuildup/my-ae-sdk-storage/releases/assets/314511555
+2025-11-10T12:55:07.8875930Z [INFO] Download URL (browser): https://github.com/rebuildup/my-ae-sdk-storage/releases/download/sdk/AfterEffectsSDK_25.6_61_win.zip
+2025-11-10T12:55:07.8878470Z [INFO] Downloading SDK archive...
+2025-11-10T12:55:17.8637817Z [INFO] Download complete (7.2 MB)
+2025-11-10T12:55:17.8639895Z [INFO] Extracting SDK archive...
+2025-11-10T12:55:20.4588850Z Expand-Archive : Exception calling "ExtractToFile" with "3" argument(s): "The archive entry was compressed using an 
+2025-11-10T12:55:20.4589788Z unsupported compression method."
+2025-11-10T12:55:20.4590194Z At D:\a\_temp\5b7d4595-1719-4d77-9a24-e938db51bc17.ps1:174 char:5
+2025-11-10T12:55:20.4590949Z +     Expand-Archive -LiteralPath $Archive -DestinationPath $Destinatio ...
+2025-11-10T12:55:20.4591753Z +     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+2025-11-10T12:55:20.4592277Z     + CategoryInfo          : NotSpecified: (:) [Expand-Archive], MethodInvocationException
+2025-11-10T12:55:20.4592858Z     + FullyQualifiedErrorId : InvalidDataException,Expand-Archive
+2025-11-10T12:55:20.4593246Z  
+2025-11-10T12:55:20.4803267Z ##[error]Process completed with exit code 1.
+2025-11-10T12:55:20.5019951Z Post job cleanup.
+2025-11-10T12:55:20.7246583Z [command]"C:\Program Files\Git\bin\git.exe" version
+2025-11-10T12:55:20.7532481Z git version 2.51.2.windows.1
+2025-11-10T12:55:20.7612485Z Temporarily overriding HOME='D:\a\_temp\8fb6b95c-7f3e-44b7-8542-4f4b5d3c0060' before making global git config changes
+2025-11-10T12:55:20.7613654Z Adding repository directory to the temporary git global config as a safe directory
+2025-11-10T12:55:20.7624512Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\Ae_sep_color\Ae_sep_color
+2025-11-10T12:55:20.7950825Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2025-11-10T12:55:20.8292652Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2025-11-10T12:55:21.3707797Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2025-11-10T12:55:21.3961904Z http.https://github.com/.extraheader
+2025-11-10T12:55:21.4011975Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+2025-11-10T12:55:21.4313437Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2025-11-10T12:55:21.9594739Z Cleaning up orphan processes

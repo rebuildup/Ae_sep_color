@@ -669,9 +669,15 @@ jobs:
           try {
             Expand-Archive -Path $outputPath -DestinationPath $extractDir -Force -ErrorAction Stop
           } catch {
-            LogError ("Failed to extract SDK archive: {0}" -f $_.Exception.Message)
-            Get-ChildItem $extractDir -Recurse | Select-Object -First 40 | Format-Table FullName, LastWriteTime
-            exit 1
+            $expandError = $_
+            if ($SevenZipPath) {
+              LogWarn ("Expand-Archive failed ({0}); retrying with 7-Zip" -f $expandError.Exception.Message)
+              & $SevenZipPath x $outputPath ("-o$extractDir") -y | Out-Null
+            } else {
+              LogError ("Failed to extract SDK archive: {0}" -f $expandError.Exception.Message)
+              Get-ChildItem $extractDir -Recurse | Select-Object -First 40 | Format-Table FullName, LastWriteTime
+              exit 1
+            }
           }
 
           function Get-SevenZipPath {
