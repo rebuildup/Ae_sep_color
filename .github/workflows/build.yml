@@ -780,16 +780,18 @@ jobs:
               Sort-Object FullName
 
             foreach ($script in $scripts) {
-            Write-Output ("▶ SDK準備スクリプトを実行: {0}" -f $script.FullName)
-            Push-Location $script.DirectoryName
-            try {
-              & cmd.exe /c "`"$($script.FullName)`""
-            } finally {
-              Pop-Location
-            }
-            if ($LASTEXITCODE -ne 0) {
-              Write-Output ("⚠️  スクリプトが終了コード {0} を返しました" -f $LASTEXITCODE)
-            }
+              Write-Output ("▶ SDK準備スクリプトを実行: {0}" -f $script.FullName)
+              Push-Location -LiteralPath $script.DirectoryName
+              try {
+                & cmd.exe /c "`"$($script.FullName)`""
+              } finally {
+                Pop-Location
+              }
+
+              if ($LASTEXITCODE -ne 0) {
+                Write-Output ("⚠️  スクリプトが終了コード {0} を返しました" -f $LASTEXITCODE)
+              }
+
               $result = Get-SdkSourceDirs -root $root
               if ($result) { return $result }
             }
@@ -858,9 +860,21 @@ jobs:
             Write-Output "❌ AeSDKのセットアップに失敗しました"
             Write-Output "想定パス: $EXPECTED_SDK_PATH"
             Write-Output "存在確認:"
-            if (Test-Path "$EXPECTED_SDK_PATH") { Write-Output "  - ディレクトリは存在します" } else { Write-Output "  - ディレクトリが存在しません" }
-            if (Test-Path "$EXPECTED_SDK_PATH\Headers") { Write-Output "  - Headers\ は存在します" } else { Write-Output "  - Headers\ が存在しません" }
-            if (Test-Path "$EXPECTED_SDK_PATH\Util") { Write-Output "  - Util\ は存在します" } else { Write-Output "  - Util\ が存在しません" }
+            if (Test-Path "$EXPECTED_SDK_PATH") {
+              Write-Output "  - ディレクトリは存在します"
+            } else {
+              Write-Output "  - ディレクトリが存在しません"
+            }
+            if (Test-Path "$EXPECTED_SDK_PATH\Headers") {
+              Write-Output "  - Headers\ は存在します"
+            } else {
+              Write-Output "  - Headers\ が存在しません"
+            }
+            if (Test-Path "$EXPECTED_SDK_PATH\Util") {
+              Write-Output "  - Util\ は存在します"
+            } else {
+              Write-Output "  - Util\ が存在しません"
+            }
             Write-Output ""
             Write-Output "展開されたファイル:"
             $parentDir = Split-Path -Parent $EXPECTED_SDK_PATH
