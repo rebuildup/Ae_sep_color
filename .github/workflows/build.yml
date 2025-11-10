@@ -90,20 +90,20 @@ jobs:
           # アセット情報を取得
           ASSET_NAME="${{ matrix.sdk_file }}"
           ASSET_JSON=$(echo "$RELEASE_JSON" | jq -c --arg name "$ASSET_NAME" '.assets[]? | select(.name == $name)' | head -1)
-          
+
           if [ -z "$ASSET_JSON" ]; then
             echo "❌ SDKファイルが見つかりません: $ASSET_NAME"
             exit 1
           fi
-          
+
           API_DOWNLOAD_URL=$(echo "$ASSET_JSON" | jq -r '.url // empty')
           
           # SDKをダウンロード
           echo "⬇️  SDKをダウンロード中..."
           curl -L \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/octet-stream" \
-            -o AE_SDK.zip \
+               -H "Authorization: token $GITHUB_TOKEN" \
+               -H "Accept: application/octet-stream" \
+               -o AE_SDK.zip \
             -s "$API_DOWNLOAD_URL"
           
           if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
@@ -148,7 +148,7 @@ jobs:
           
           if (-not $releaseJson) {
             Write-Host "❌ リリース情報の取得に失敗しました"
-            exit 1
+              exit 1
           }
           
           # アセット情報を取得
@@ -217,16 +217,25 @@ jobs:
           # extractzstd.shを実行（xattrエラーは無視）
           echo "🔧 extractzstd.shを実行してSDKを展開します..."
           
-          # extractzstd.shを実行し、出力をキャプチャ
-          ./extractzstd.sh 2>&1 || {
-            EXIT_CODE=$?
-            echo "⚠️ extractzstd.shがエラーコード $EXIT_CODE で終了しました"
-          }
+          # extractzstd.shを実行し、出力をキャプチャ（標準出力のみ表示、エラーは無視）
+          set +e  # エラーで停止しない
+          ./extractzstd.sh 2>&1 | head -50
+          EXTRACT_EXIT=$?
+          set -e  # エラーで停止を再有効化
+          
+          if [ $EXTRACT_EXIT -ne 0 ]; then
+            echo "⚠️ extractzstd.shがエラーコード $EXTRACT_EXIT で終了しました（続行します）"
+          fi
           
           # SDKディレクトリが存在するか確認
           echo "📁 SDK展開後のディレクトリを確認中..."
+          sleep 2  # ファイルシステムの同期を待つ
+          
+          ls -la | grep -i "aftereffects" || echo "  AfterEffectsSDKディレクトリが見えません"
+          
           if [ -d "ae25.6_61.64bit.AfterEffectsSDK" ]; then
             echo "✅ SDKは正常に展開されました"
+            ls -la ae25.6_61.64bit.AfterEffectsSDK | head -20
           else
             echo "⚠️ SDKディレクトリが見つかりません。zstd展開を直接実行します..."
             
@@ -241,12 +250,18 @@ jobs:
             
             # zstd展開を直接実行
             echo "🔧 zstd展開を実行中..."
-            ./zstd -cd ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip | tar xf - -C . 2>&1 || {
-              echo "❌ zstd展開に失敗しました (exit code: $?)"
+            set +e
+            ./zstd -cd ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip | tar xf - -C . 2>&1 | head -50
+            ZSTD_EXIT=$?
+            set -e
+            
+            if [ $ZSTD_EXIT -ne 0 ]; then
+              echo "❌ zstd展開に失敗しました (exit code: $ZSTD_EXIT)"
               exit 1
-            }
+            fi
             
             # 再度確認
+            sleep 2
             if [ -d "ae25.6_61.64bit.AfterEffectsSDK" ]; then
               echo "✅ zstd展開が完了しました"
             else
@@ -264,7 +279,8 @@ jobs:
           SDK_ROOT=""
           
           # パターン1: ae*.AfterEffectsSDK/Examples を探す（このSDKの実際の構造）
-          for dir in ae*.AfterEffectsSDK 2>/dev/null; do
+          shopt -s nullglob  # マッチしない場合は空の配列にする
+          for dir in ae*.AfterEffectsSDK; do
             if [ -d "$dir/Examples/Headers" ] && [ -d "$dir/Examples/Util" ] && [ -d "$dir/Examples/Resources" ]; then
               SDK_ROOT=$(cd "$dir/Examples" && pwd)
               echo "✅ SDK rootを発見 (パターン1 - Examples内): $SDK_ROOT"
@@ -276,11 +292,12 @@ jobs:
               break
             fi
           done
+          shopt -u nullglob
           
           # パターン2: Headers, Util, Resources を含む任意のディレクトリを深さ3まで探す
           if [ -z "$SDK_ROOT" ]; then
             echo "🔍 Headersディレクトリを検索中..."
-            for dir in $(find . -maxdepth 3 -type d -name "Headers" 2>/dev/null); do
+            while IFS= read -r -d '' dir; do
               parent=$(dirname "$dir")
               if [ -d "$parent/Util" ] && [ -d "$parent/Resources" ]; then
                 SDK_ROOT=$(cd "$parent" && pwd)
@@ -288,7 +305,7 @@ jobs:
                 echo "   親ディレクトリ: $(basename "$parent")"
                 break
               fi
-            done
+            done < <(find . -maxdepth 3 -type d -name "Headers" -print0 2>/dev/null)
           fi
           
           if [ -z "$SDK_ROOT" ]; then
@@ -621,7 +638,7 @@ jobs:
             find . -name "*.plugin" -o -name "*.o" | head -20
             exit 1
           fi
-
+          
       - name: Build Plugin (Windows)
         if: matrix.platform == 'win'
         shell: pwsh
