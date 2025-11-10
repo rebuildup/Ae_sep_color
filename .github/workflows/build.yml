@@ -207,11 +207,15 @@ jobs:
           # extractzstd.shを実行
           echo "🔧 extractzstd.shを実行してSDKを展開します..."
           chmod +x extractzstd.sh zstd 2>/dev/null || true
-          ./extractzstd.sh
           
-          EXTRACT_EXIT_CODE=$?
-          if [ $EXTRACT_EXIT_CODE -ne 0 ]; then
-            echo "⚠️ extractzstd.shの実行で警告がありましたが続行します (exit code: $EXTRACT_EXIT_CODE)"
+          # macOS特有のエラー対策：xattrが失敗しても続行
+          if ! ./extractzstd.sh 2>&1; then
+            echo "⚠️ extractzstd.shがエラーを返しましたが続行します"
+            # xattrのエラーを無視してzstd展開のみ実行
+            if [ -f "zstd" ] && [ -f "ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip" ]; then
+              echo "🔧 zstd展開を直接実行..."
+              ./zstd -cd ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip | tar xvf - -C . || echo "⚠️ tar展開で警告がありました"
+            fi
           fi
           
           echo "📁 展開後のディレクトリ構造を確認中..."
