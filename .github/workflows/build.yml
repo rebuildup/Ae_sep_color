@@ -330,28 +330,41 @@ jobs:
           
           echo "✅ ダウンロード完了 ($(du -h AE_SDK.zip | cut -f1))"
           
-          # 親ディレクトリ構造を作成
-          mkdir -p "$(dirname "$EXPECTED_SDK_PATH")"
-          
-          # SDKを展開
+          # SDKを展開（テンポラリディレクトリへ）
           echo "📦 SDKを展開中..."
-          unzip -q AE_SDK.zip -d "$(dirname "$EXPECTED_SDK_PATH")" || {
-            # ZIPのルートにSDKがある場合
-            echo "⚠️  最初の展開に失敗。別の方法で展開を試みます..."
-            unzip -q AE_SDK.zip
-            if [ -d "Adobe-AE-SDK" ]; then
-              mv Adobe-AE-SDK "$EXPECTED_SDK_PATH"
-            elif [ -d "SDK" ]; then
-              mv SDK "$EXPECTED_SDK_PATH"
-            else
-              # 展開されたファイルを直接移動
-              mkdir -p "$EXPECTED_SDK_PATH"
-              find . -maxdepth 1 -type d \( -name "Headers" -o -name "Util" \) -exec mv {} "$EXPECTED_SDK_PATH/" \;
-            fi
+          EXTRACT_DIR=$(mktemp -d)
+          if ! unzip -q AE_SDK.zip -d "$EXTRACT_DIR"; then
+            echo "❌ SDKの展開に失敗しました"
+            ls -la "$EXTRACT_DIR" || true
+            exit 1
+          fi
+
+          find_source_dir() {
+            local pattern=$1
+            find "$EXTRACT_DIR" -type d -path "$pattern" -print -quit
           }
-          
+
+          HEADERS_SRC=$(find_source_dir "*/AfterEffectsSDK*/Headers")
+          UTIL_SRC=$(find_source_dir "*/AfterEffectsSDK*/Util")
+
+          # フォールバック: 最初に見つかったHeaders/Util
+          [ -z "$HEADERS_SRC" ] && HEADERS_SRC=$(find "$EXTRACT_DIR" -type d -name "Headers" -print -quit)
+          [ -z "$UTIL_SRC" ] && UTIL_SRC=$(find "$EXTRACT_DIR" -type d -name "Util" -print -quit)
+
+          if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
+            echo "❌ SDK内に Headers/Util が見つかりません"
+            find "$EXTRACT_DIR" -maxdepth 3 -type d | head -40
+            exit 1
+          fi
+
+          mkdir -p "$EXPECTED_SDK_PATH"
+          rm -rf "$EXPECTED_SDK_PATH/Headers" "$EXPECTED_SDK_PATH/Util"
+          cp -R "$HEADERS_SRC" "$EXPECTED_SDK_PATH/Headers"
+          cp -R "$UTIL_SRC" "$EXPECTED_SDK_PATH/Util"
+
           # クリーンアップ
           rm -f AE_SDK.zip
+          rm -rf "$EXTRACT_DIR"
           
           # 最終確認
           if [ -d "$EXPECTED_SDK_PATH/Headers" ] && [ -d "$EXPECTED_SDK_PATH/Util" ]; then
@@ -515,41 +528,46 @@ jobs:
           $fileSize = (Get-Item $outputPath).Length / 1MB
           Write-Output "✅ ダウンロード完了 ($([math]::Round($fileSize, 2)) MB)"
           
-          # 親ディレクトリ構造を作成
-          $parentDir = Split-Path -Parent $EXPECTED_SDK_PATH
-          New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
-          
-          # SDKを展開
+          # SDKを展開（テンポラリディレクトリへ）
           Write-Output "📦 SDKを展開中..."
+          $extractDir = Join-Path $env:RUNNER_TEMP ("ae_sdk_" + [Guid]::NewGuid().ToString())
+          New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+
           try {
-            Expand-Archive -Path $outputPath -DestinationPath $parentDir -Force -ErrorAction Stop
+            Expand-Archive -Path $outputPath -DestinationPath $extractDir -Force -ErrorAction Stop
           } catch {
-            Write-Output "⚠️  最初の展開に失敗。別の方法で展開を試みます..."
-            Expand-Archive -Path $outputPath -DestinationPath "." -Force
-            if (Test-Path "Adobe-AE-SDK") {
-              Move-Item "Adobe-AE-SDK" $EXPECTED_SDK_PATH -Force
-            } elseif (Test-Path "SDK") {
-              Move-Item "SDK" $EXPECTED_SDK_PATH -Force
-            } elseif ((Test-Path "Headers") -or (Test-Path "Util")) {
-              New-Item -ItemType Directory -Force -Path $EXPECTED_SDK_PATH | Out-Null
-              if (Test-Path "Headers") { Move-Item "Headers" $EXPECTED_SDK_PATH -Force }
-              if (Test-Path "Util") { Move-Item "Util" $EXPECTED_SDK_PATH -Force }
+            Write-Output "❌ SDKの展開に失敗しました: $($_.Exception.Message)"
+            Get-ChildItem $extractDir -Recurse | Select-Object -First 40 | Format-Table FullName, LastWriteTime
+            exit 1
+          }
+
+          function Get-SdkSubDir([string]$root, [string]$name) {
+            $match = Get-ChildItem -Path $root -Recurse -Directory -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match 'AfterEffectsSDK.*\\' + $name + '$' } |
+              Select-Object -First 1
+
+            if (-not $match) {
+              $match = Get-ChildItem -Path $root -Recurse -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -ieq $name } |
+                Select-Object -First 1
             }
+            return $match
           }
-          
-          # ZIPのルートにSDKがある場合の処理
-          if (Test-Path "$parentDir\Adobe-AE-SDK") {
-            Move-Item "$parentDir\Adobe-AE-SDK" $EXPECTED_SDK_PATH -Force
-          } elseif (Test-Path "$parentDir\SDK") {
-            Move-Item "$parentDir\SDK" $EXPECTED_SDK_PATH -Force
-          } elseif ((Test-Path "$parentDir\Headers") -or (Test-Path "$parentDir\Util")) {
-            New-Item -ItemType Directory -Force -Path $EXPECTED_SDK_PATH | Out-Null
-            if (Test-Path "$parentDir\Headers") { Move-Item "$parentDir\Headers" $EXPECTED_SDK_PATH -Force }
-            if (Test-Path "$parentDir\Util") { Move-Item "$parentDir\Util" $EXPECTED_SDK_PATH -Force }
+
+          $headersSrc = Get-SdkSubDir -root $extractDir -name "Headers"
+          $utilSrc    = Get-SdkSubDir -root $extractDir -name "Util"
+
+          if (-not $headersSrc -or -not $utilSrc) {
+            Write-Output "❌ SDK内に Headers/Util が見つかりません"
+            Get-ChildItem $extractDir -Recurse -Directory | Select-Object -First 40 | Format-Table FullName
+            exit 1
           }
-          
-          # クリーンアップ
-          Remove-Item $outputPath -Force -ErrorAction SilentlyContinue
+
+          New-Item -ItemType Directory -Force -Path $EXPECTED_SDK_PATH | Out-Null
+          Remove-Item -Recurse -Force (Join-Path $EXPECTED_SDK_PATH "Headers") -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force (Join-Path $EXPECTED_SDK_PATH "Util") -ErrorAction SilentlyContinue
+          Copy-Item -Recurse -Force $headersSrc.FullName (Join-Path $EXPECTED_SDK_PATH "Headers")
+          Copy-Item -Recurse -Force $utilSrc.FullName (Join-Path $EXPECTED_SDK_PATH "Util")
           
           # 最終確認
           if ((Test-Path "$EXPECTED_SDK_PATH\Headers") -and (Test-Path "$EXPECTED_SDK_PATH\Util")) {
@@ -568,9 +586,14 @@ jobs:
             if (Test-Path "$EXPECTED_SDK_PATH\Util") { Write-Output "  - Util\ は存在します" } else { Write-Output "  - Util\ が存在しません" }
             Write-Output ""
             Write-Output "展開されたファイル:"
+            $parentDir = Split-Path -Parent $EXPECTED_SDK_PATH
             Get-ChildItem $parentDir | Select-Object -First 20 | Format-Table Name, Length, LastWriteTime
             exit 1
           }
+
+          # クリーンアップ
+          Remove-Item $outputPath -Force -ErrorAction SilentlyContinue
+          Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
 
       # 7. Mac用: Xcodeビルドの実行
       - name: Build Xcode Project (Unsigned)
