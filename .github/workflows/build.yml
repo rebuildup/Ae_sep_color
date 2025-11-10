@@ -252,18 +252,29 @@ jobs:
           echo "   ダウンロードURL: $DOWNLOAD_URL"
           echo "   認証: $([ -n "$GITHUB_TOKEN" ] && echo "あり" || echo "なし")"
           
-          # まず認証付きで試す（-f フラグを削除してエラーメッセージを取得）
-          HTTP_STATUS=$(curl -L -w "%{http_code}" \
+          # まず認証付きで試す
+          # HTTPステータスコードを取得するために、一時ファイルを使用
+          HTTP_OUTPUT=$(mktemp)
+          CURL_OUTPUT=$(curl -L -w "\nHTTP_STATUS:%{http_code}" \
                -H "Authorization: token $GITHUB_TOKEN" \
                -H "Accept: application/octet-stream" \
                -H "User-Agent: GitHub-Actions" \
                -o AE_SDK.zip \
-               -s -S "$DOWNLOAD_URL" 2>&1 | tail -1)
+               -s -S "$DOWNLOAD_URL" 2>&1)
           
           CURL_EXIT_CODE=$?
+          HTTP_STATUS=$(echo "$CURL_OUTPUT" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
+          
+          # エラーメッセージを取得（HTTP_STATUS行を除く）
+          CURL_ERROR=$(echo "$CURL_OUTPUT" | grep -v "HTTP_STATUS:" || echo "")
           
           echo "📊 HTTPステータス: $HTTP_STATUS"
           echo "📊 curl終了コード: $CURL_EXIT_CODE"
+          
+          if [ -n "$CURL_ERROR" ]; then
+            echo "📊 curlエラーメッセージ:"
+            echo "$CURL_ERROR" | head -10
+          fi
           
           # HTTPステータスが200でない場合、またはcurlが失敗した場合
           if [ "$HTTP_STATUS" != "200" ] || [ "$CURL_EXIT_CODE" != "0" ]; then
@@ -274,16 +285,23 @@ jobs:
             
             # 認証なしで試す（パブリックリポジトリの場合）
             echo "試行: 認証なしでダウンロードを試みます..."
-            HTTP_STATUS2=$(curl -L -w "%{http_code}" \
+            CURL_OUTPUT2=$(curl -L -w "\nHTTP_STATUS:%{http_code}" \
                  -H "Accept: application/octet-stream" \
                  -H "User-Agent: GitHub-Actions" \
                  -o AE_SDK.zip \
-                 -s -S "$DOWNLOAD_URL" 2>&1 | tail -1)
+                 -s -S "$DOWNLOAD_URL" 2>&1)
             
             CURL_EXIT_CODE2=$?
+            HTTP_STATUS2=$(echo "$CURL_OUTPUT2" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
+            CURL_ERROR2=$(echo "$CURL_OUTPUT2" | grep -v "HTTP_STATUS:" || echo "")
             
             echo "📊 HTTPステータス (認証なし): $HTTP_STATUS2"
             echo "📊 curl終了コード (認証なし): $CURL_EXIT_CODE2"
+            
+            if [ -n "$CURL_ERROR2" ]; then
+              echo "📊 curlエラーメッセージ (認証なし):"
+              echo "$CURL_ERROR2" | head -10
+            fi
             
             if [ "$HTTP_STATUS2" != "200" ] || [ "$CURL_EXIT_CODE2" != "0" ]; then
               echo "❌ SDKのダウンロードに失敗しました"
@@ -300,6 +318,7 @@ jobs:
               echo "  3. トークンが期限切れまたは無効"
               echo "  4. ダウンロードURLが無効またはアクセスできない"
               echo "  5. ネットワークエラーまたはタイムアウト"
+              rm -f "$HTTP_OUTPUT"
               exit 1
             else
               echo "✅ 認証なしでダウンロード成功"
@@ -307,6 +326,8 @@ jobs:
           else
             echo "✅ 認証付きでダウンロード成功"
           fi
+          
+          rm -f "$HTTP_OUTPUT"
           
           # ダウンロードしたファイルの確認
           if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
@@ -846,18 +867,29 @@ jobs:
           echo "   ダウンロードURL: $DOWNLOAD_URL"
           echo "   認証: $([ -n "$GITHUB_TOKEN" ] && echo "あり" || echo "なし")"
           
-          # まず認証付きで試す（-f フラグを削除してエラーメッセージを取得）
-          HTTP_STATUS=$(curl -L -w "%{http_code}" \
+          # まず認証付きで試す
+          # HTTPステータスコードを取得するために、一時ファイルを使用
+          HTTP_OUTPUT=$(mktemp)
+          CURL_OUTPUT=$(curl -L -w "\nHTTP_STATUS:%{http_code}" \
                -H "Authorization: token $GITHUB_TOKEN" \
                -H "Accept: application/octet-stream" \
                -H "User-Agent: GitHub-Actions" \
                -o AE_SDK.zip \
-               -s -S "$DOWNLOAD_URL" 2>&1 | tail -1)
+               -s -S "$DOWNLOAD_URL" 2>&1)
           
           CURL_EXIT_CODE=$?
+          HTTP_STATUS=$(echo "$CURL_OUTPUT" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
+          
+          # エラーメッセージを取得（HTTP_STATUS行を除く）
+          CURL_ERROR=$(echo "$CURL_OUTPUT" | grep -v "HTTP_STATUS:" || echo "")
           
           echo "📊 HTTPステータス: $HTTP_STATUS"
           echo "📊 curl終了コード: $CURL_EXIT_CODE"
+          
+          if [ -n "$CURL_ERROR" ]; then
+            echo "📊 curlエラーメッセージ:"
+            echo "$CURL_ERROR" | head -10
+          fi
           
           # HTTPステータスが200でない場合、またはcurlが失敗した場合
           if [ "$HTTP_STATUS" != "200" ] || [ "$CURL_EXIT_CODE" != "0" ]; then
@@ -868,16 +900,23 @@ jobs:
             
             # 認証なしで試す（パブリックリポジトリの場合）
             echo "試行: 認証なしでダウンロードを試みます..."
-            HTTP_STATUS2=$(curl -L -w "%{http_code}" \
+            CURL_OUTPUT2=$(curl -L -w "\nHTTP_STATUS:%{http_code}" \
                  -H "Accept: application/octet-stream" \
                  -H "User-Agent: GitHub-Actions" \
                  -o AE_SDK.zip \
-                 -s -S "$DOWNLOAD_URL" 2>&1 | tail -1)
+                 -s -S "$DOWNLOAD_URL" 2>&1)
             
             CURL_EXIT_CODE2=$?
+            HTTP_STATUS2=$(echo "$CURL_OUTPUT2" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
+            CURL_ERROR2=$(echo "$CURL_OUTPUT2" | grep -v "HTTP_STATUS:" || echo "")
             
             echo "📊 HTTPステータス (認証なし): $HTTP_STATUS2"
             echo "📊 curl終了コード (認証なし): $CURL_EXIT_CODE2"
+            
+            if [ -n "$CURL_ERROR2" ]; then
+              echo "📊 curlエラーメッセージ (認証なし):"
+              echo "$CURL_ERROR2" | head -10
+            fi
             
             if [ "$HTTP_STATUS2" != "200" ] || [ "$CURL_EXIT_CODE2" != "0" ]; then
               echo "❌ SDKのダウンロードに失敗しました"
@@ -894,6 +933,7 @@ jobs:
               echo "  3. トークンが期限切れまたは無効"
               echo "  4. ダウンロードURLが無効またはアクセスできない"
               echo "  5. ネットワークエラーまたはタイムアウト"
+              rm -f "$HTTP_OUTPUT"
               exit 1
             else
               echo "✅ 認証なしでダウンロード成功"
@@ -901,6 +941,8 @@ jobs:
           else
             echo "✅ 認証付きでダウンロード成功"
           fi
+          
+          rm -f "$HTTP_OUTPUT"
           
           if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
             echo "❌ ダウンロードしたファイルが無効です"
