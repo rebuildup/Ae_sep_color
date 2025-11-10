@@ -1,565 +1,290 @@
 name: Build After Effects Plugin
 
 on:
-  pull_request:
-    branches: [ main, master, develop ]
-  
   push:
     branches: [ main, master, develop ]
     tags:
       - 'v*'
-  
+  pull_request:
+    branches: [ main, master, develop ]
   workflow_dispatch:
 
 jobs:
-  # ============================================
-  # ジョブ1: ビルドとテスト (署名なし)
-  # プルリクエストの検証用 - Mac/Windows両方
-  # ============================================
-  build-test:
-    name: Build and Test (Unsigned)
+  build:
+    name: Build ${{ matrix.platform }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [macos-14, windows-latest]
         include:
           - os: macos-14
-            sdk_file: AfterEffectsSDK_25.6_61_mac.zip
             platform: mac
+            sdk_file: AfterEffectsSDK_25.6_61_mac.zip
           - os: windows-latest
-            sdk_file: AfterEffectsSDK_25.6_61_win.zip
             platform: win
+            sdk_file: AfterEffectsSDK_25.6_61_win.zip
     
     runs-on: ${{ matrix.os }}
 
     steps:
-      # 1. コードのチェックアウト
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 0
 
-      # 2. Mac用: Xcodeバージョンの設定
-      - name: Set up Xcode
+      # ==================== Mac環境のセットアップ ====================
+      - name: Set up Xcode (Mac)
         if: matrix.platform == 'mac'
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '15.2'
 
-      # 3. Mac用: Xcodeライセンスの同意
-      - name: Accept Xcode license
+      - name: Accept Xcode license (Mac)
         if: matrix.platform == 'mac'
         run: sudo xcodebuild -license accept
 
-      # 4. Windows用: Visual Studio セットアップ
-      - name: Set up MSBuild
+      # ==================== Windows環境のセットアップ ====================
+      - name: Set up MSBuild (Windows)
         if: matrix.platform == 'win'
         uses: microsoft/setup-msbuild@v2
 
-      # 5. Mac用: プロジェクトパスの確認
-      - name: Determine project path (Mac)
+      # ==================== SDKのセットアップ ====================
+      - name: Extract AE SDK from tmp (Mac)
         if: matrix.platform == 'mac'
-        id: project_path_mac
         run: |
-          REPO_ROOT="$(pwd)"
-          PROJECT_DIR="$REPO_ROOT"
+          set -e
           
-          if [ -d "Template/sep_color" ]; then
-            PROJECT_DIR="$REPO_ROOT/Template/sep_color"
-          elif [ -d "sep_color" ]; then
-            PROJECT_DIR="$REPO_ROOT/sep_color"
+          echo "📦 tmpからSDKを展開します"
+          
+          # tmpディレクトリの確認
+          if [ ! -f "tmp/${{ matrix.sdk_file }}" ]; then
+            echo "❌ tmp/${{ matrix.sdk_file }} が見つかりません"
+            ls -la tmp/ || echo "tmpディレクトリが存在しません"
+            exit 1
           fi
           
-          BUILD_DIR="$PROJECT_DIR/Mac"
-          EXPECTED_SDK_PATH="$(cd "$BUILD_DIR" && cd ../../.. && pwd)"
+          # 作業ディレクトリの作成
+          WORK_DIR="${{ github.workspace }}/ae_sdk_work"
+          mkdir -p "$WORK_DIR"
           
-          echo "project_dir=$PROJECT_DIR" >> $GITHUB_OUTPUT
-          echo "build_dir=$BUILD_DIR" >> $GITHUB_OUTPUT
-          echo "expected_sdk_path=$EXPECTED_SDK_PATH" >> $GITHUB_OUTPUT
+          # SDKを展開
+          echo "📂 SDKを展開中..."
+          cd "$WORK_DIR"
+          unzip -q "${{ github.workspace }}/tmp/${{ matrix.sdk_file }}"
+          
+          # SDK構造を探索
+          echo "📁 展開された構造:"
+          find . -maxdepth 3 -type d | head -20
+          
+          # SDK root を見つける (Headers と Util が存在するディレクトリ)
+          SDK_ROOT=""
+          for dir in $(find . -type d -name "Headers"); do
+            parent=$(dirname "$dir")
+            if [ -d "$parent/Util" ]; then
+              SDK_ROOT="$parent"
+              break
+            fi
+          done
+          
+          if [ -z "$SDK_ROOT" ]; then
+            echo "❌ SDK root (Headers/Utilを含むディレクトリ) が見つかりません"
+            exit 1
+          fi
+          
+          echo "✅ SDK root: $SDK_ROOT"
+          echo "SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
+          
+          # Examples/Template ディレクトリを作成
+          mkdir -p "$SDK_ROOT/Examples/Template"
+          
+          echo "✅ SDKのセットアップが完了しました"
 
-      # 5. Windows用: プロジェクトパスの確認
-      - name: Determine project path (Windows)
+      - name: Extract AE SDK from tmp (Windows)
         if: matrix.platform == 'win'
-        id: project_path_win
-        shell: powershell
+        shell: pwsh
         run: |
-          $REPO_ROOT = Get-Location
-          $PROJECT_DIR = $REPO_ROOT
+          Write-Host "📦 tmpからSDKを展開します"
           
-          if (Test-Path "Template\sep_color") {
-            $PROJECT_DIR = Join-Path $REPO_ROOT "Template\sep_color"
-          } elseif (Test-Path "sep_color") {
-            $PROJECT_DIR = Join-Path $REPO_ROOT "sep_color"
+          # tmpディレクトリの確認
+          $sdkZip = "tmp\${{ matrix.sdk_file }}"
+          if (-not (Test-Path $sdkZip)) {
+            Write-Host "❌ $sdkZip が見つかりません"
+            if (Test-Path "tmp") {
+              Get-ChildItem "tmp" | Format-Table
+            } else {
+              Write-Host "tmpディレクトリが存在しません"
+            }
+            exit 1
           }
           
-          $BUILD_DIR = Join-Path $PROJECT_DIR "Win"
-          $EXPECTED_SDK_PATH = (Get-Item (Join-Path $BUILD_DIR "..\..\..")).FullName
+          # 作業ディレクトリの作成
+          $workDir = "${{ github.workspace }}\ae_sdk_work"
+          New-Item -ItemType Directory -Path $workDir -Force | Out-Null
           
-          Write-Output "project_dir=$PROJECT_DIR" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Output "build_dir=$BUILD_DIR" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Output "expected_sdk_path=$EXPECTED_SDK_PATH" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          # SDKを展開
+          Write-Host "📂 SDKを展開中..."
+          Expand-Archive -Path $sdkZip -DestinationPath $workDir -Force
+          
+          # SDK構造を探索
+          Write-Host "📁 展開された構造:"
+          Get-ChildItem $workDir -Directory -Recurse -Depth 3 | Select-Object -First 20 | Format-Table
+          
+          # SDK root を見つける (Headers と Util が存在するディレクトリ)
+          $sdkRoot = $null
+          $headersDirs = Get-ChildItem $workDir -Directory -Recurse -Filter "Headers"
+          foreach ($dir in $headersDirs) {
+            $parent = $dir.Parent.FullName
+            if (Test-Path "$parent\Util") {
+              $sdkRoot = $parent
+              break
+            }
+          }
+          
+          if (-not $sdkRoot) {
+            Write-Host "❌ SDK root (Headers/Utilを含むディレクトリ) が見つかりません"
+            exit 1
+          }
+          
+          Write-Host "✅ SDK root: $sdkRoot"
+          Add-Content -Path $env:GITHUB_ENV -Value "SDK_ROOT=$sdkRoot"
+          
+          # Examples/Template ディレクトリを作成
+          $templateDir = "$sdkRoot\Examples\Template"
+          New-Item -ItemType Directory -Path $templateDir -Force | Out-Null
+          
+          Write-Host "✅ SDKのセットアップが完了しました"
 
-      # 5.5. プロジェクトパスを統合
-      - name: Set project path outputs
-        id: project_path
-        run: |
-          if [ "${{ matrix.platform }}" == "mac" ]; then
-            echo "project_dir=${{ steps.project_path_mac.outputs.project_dir }}" >> $GITHUB_OUTPUT
-            echo "build_dir=${{ steps.project_path_mac.outputs.build_dir }}" >> $GITHUB_OUTPUT
-            echo "expected_sdk_path=${{ steps.project_path_mac.outputs.expected_sdk_path }}" >> $GITHUB_OUTPUT
-          else
-            echo "project_dir=${{ steps.project_path_win.outputs.project_dir }}" >> $GITHUB_OUTPUT
-            echo "build_dir=${{ steps.project_path_win.outputs.build_dir }}" >> $GITHUB_OUTPUT
-            echo "expected_sdk_path=${{ steps.project_path_win.outputs.expected_sdk_path }}" >> $GITHUB_OUTPUT
-          fi
-        shell: bash
-
-      # 6. Mac用: GitHubリリースからAE SDKをダウンロード
-      - name: Download AE SDK from GitHub Release (Mac)
+      # ==================== プラグインをSDK/Examples/Templateにコピー ====================
+      - name: Copy plugin to SDK Template directory (Mac)
         if: matrix.platform == 'mac'
-        env:
-          GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
         run: |
-          set -e  # エラー時に即座に終了
+          set -e
           
-          EXPECTED_SDK_PATH="${{ steps.project_path.outputs.expected_sdk_path }}"
+          echo "📋 プラグインをSDK Templateディレクトリにコピー"
           
-          # AeSDKが既に存在するか確認
-          if [ -d "$EXPECTED_SDK_PATH/Headers" ] && [ -d "$EXPECTED_SDK_PATH/Util" ]; then
-            echo "✅ AeSDKが既に存在します: $EXPECTED_SDK_PATH"
+          PLUGIN_DIR="$SDK_ROOT/Examples/Template/sep_color"
+          
+          # sep_color ディレクトリを作成してファイルをコピー
+          mkdir -p "$PLUGIN_DIR"
+          
+          # 必要なファイルのみをコピー (tmpとae_sdk_workは除外)
+          rsync -av \
+            --exclude='.git' \
+            --exclude='tmp' \
+            --exclude='ae_sdk_work' \
+            --exclude='.github' \
+            --exclude='output' \
+            "${{ github.workspace }}/" \
+            "$PLUGIN_DIR/"
+          
+          echo "✅ プラグインをコピーしました: $PLUGIN_DIR"
+          echo "PLUGIN_DIR=$PLUGIN_DIR" >> $GITHUB_ENV
+
+      - name: Copy plugin to SDK Template directory (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          Write-Host "📋 プラグインをSDK Templateディレクトリにコピー"
+          
+          $pluginDir = "$env:SDK_ROOT\Examples\Template\sep_color"
+          
+          # sep_color ディレクトリを作成
+          New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
+          
+          # 必要なファイルをコピー (除外するディレクトリ以外)
+          $excludeDirs = @('.git', 'tmp', 'ae_sdk_work', '.github', 'output')
+          
+          Get-ChildItem "${{ github.workspace }}" -Force | Where-Object {
+            $_.Name -notin $excludeDirs
+          } | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination $pluginDir -Recurse -Force
+          }
+          
+          Write-Host "✅ プラグインをコピーしました: $pluginDir"
+          Add-Content -Path $env:GITHUB_ENV -Value "PLUGIN_DIR=$pluginDir"
+
+      # ==================== BuildAll.sln のビルド ====================
+      - name: Build BuildAll.sln (Mac)
+        if: matrix.platform == 'mac'
+        run: |
+          set -e
+          
+          echo "🔨 BuildAll.sln をビルドして依存関係を整えます"
+          
+          cd "$SDK_ROOT"
+          
+          # BuildAll.sln または類似のファイルを探す
+          if [ -f "BuildAll.sln" ]; then
+            BUILD_SLN="BuildAll.sln"
+          elif [ -f "Examples/BuildAll.sln" ]; then
+            BUILD_SLN="Examples/BuildAll.sln"
+            cd Examples
+          else
+            echo "⚠️ BuildAll.sln が見つかりません。スキップします"
+            echo "以下のファイルを確認:"
+            find . -maxdepth 2 -name "*.sln" || true
             exit 0
           fi
           
-          # GitHub APIを使用してリリース情報を取得
-          # リリースタグの候補（優先順位順）
-          RELEASE_TAG_CANDIDATES=("sdk" "ae-sdk_25.6_61" "v25.6.61" "25.6.61")
-          REPO="rebuildup/my-ae-sdk-storage"
-          
-          echo "📦 GitHubリリースからAeSDKをダウンロードします"
-          echo "   リポジトリ: $REPO"
-          echo "   SDKファイル: ${{ matrix.sdk_file }}"
-          
-          # トークンの確認
-          if [ -z "$GITHUB_TOKEN" ]; then
-            echo "❌ GITHUB_TOKENが設定されていません"
-            echo "   GitHub Secretsに AE_SDK_DOWNLOAD_TOKEN を設定してください"
-            exit 1
-          fi
-          
-          # リリース情報を取得（複数のタグ候補を試す）
-          RELEASE_JSON=""
-          HTTP_STATUS=""
-          FOUND_TAG=""
-          
-          for RELEASE_TAG in "${RELEASE_TAG_CANDIDATES[@]}"; do
-            echo "🔍 リリース情報を取得中... (タグ: $RELEASE_TAG)"
-            RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" 2>&1)
-            
-            HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
-            RELEASE_JSON=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
-            
-            echo "📊 HTTPステータス: $HTTP_STATUS"
-            
-            if [ "$HTTP_STATUS" == "200" ]; then
-              FOUND_TAG="$RELEASE_TAG"
-              echo "✅ リリースを見つけました: $FOUND_TAG"
-              break
-            else
-              echo "⚠️  タグ '$RELEASE_TAG' が見つかりませんでした (HTTP $HTTP_STATUS)"
-            fi
-          done
-          
-          # どのタグも見つからない場合、最新リリースを試す
-          if [ -z "$FOUND_TAG" ]; then
-            echo "⚠️  指定されたタグが見つかりません。最新リリースを取得します..."
-            RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/$REPO/releases/latest" 2>&1)
-            
-            HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
-            RELEASE_JSON=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
-            
-            if [ "$HTTP_STATUS" == "200" ]; then
-              FOUND_TAG=$(echo "$RELEASE_JSON" | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4)
-              echo "✅ 最新リリースを見つけました: $FOUND_TAG"
-            fi
-          fi
-          
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "❌ リリース情報の取得に失敗しました (HTTP $HTTP_STATUS)"
-            echo "レスポンス:"
-            echo "$RELEASE_JSON" | head -30
-            echo ""
-            echo "考えられる原因:"
-            echo "  1. リポジトリが存在しない、またはプライベートリポジトリでアクセス権限がない"
-            echo "  2. リリースタグが存在しない（試したタグ: ${RELEASE_TAG_CANDIDATES[*]}）"
-            echo "  3. GitHub Personal Access Token (PAT) の権限が不足している"
-            echo "  4. AE_SDK_DOWNLOAD_TOKEN が正しく設定されていない"
-            echo ""
-            echo "デバッグ情報:"
-            echo "  リポジトリ: $REPO"
-            echo "  試したタグ: ${RELEASE_TAG_CANDIDATES[*]}"
-            exit 1
-          fi
-          
-          if [ -z "$RELEASE_JSON" ] || echo "$RELEASE_JSON" | grep -q '"message":"Not Found"'; then
-            echo "❌ リリースが見つかりません"
-            echo "レスポンス:"
-            echo "$RELEASE_JSON" | head -30
-            exit 1
-          fi
-          
-          # アセットの一覧を表示（デバッグ用）
-          echo "📋 利用可能なアセット:"
-          echo "$RELEASE_JSON" | jq -r '.assets[]?.name' | head -10 | while read name; do
-            [ -n "$name" ] && echo "   - $name"
-          done
+          # Xcodeプロジェクトが存在する場合はビルドしない(Windowsのみ必要)
+          echo "ℹ️ Mac環境ではBuildAllは不要です"
 
-          # アセットの情報を取得
-          ASSET_NAME="${{ matrix.sdk_file }}"
-          ASSET_JSON=$(echo "$RELEASE_JSON" | jq -c --arg name "$ASSET_NAME" '.assets[]? | select(.name == $name)' | head -1)
-
-          if [ -z "$ASSET_JSON" ]; then
-            echo "❌ SDKファイルが見つかりません: $ASSET_NAME"
-            echo "利用可能なアセットの一覧:"
-            echo "$RELEASE_JSON" | jq -r '.assets[]?.name' | head -10
-            exit 1
-          fi
-
-          API_DOWNLOAD_URL=$(echo "$ASSET_JSON" | jq -r '.url // empty')
-          BROWSER_DOWNLOAD_URL=$(echo "$ASSET_JSON" | jq -r '.browser_download_url // empty')
-
-          if [ -z "$API_DOWNLOAD_URL" ]; then
-            echo "❌ APIダウンロードURLが取得できません"
-            echo "$ASSET_JSON"
-            exit 1
-          fi
-
-          echo "📥 ダウンロードURL(API): $API_DOWNLOAD_URL"
-          [ -n "$BROWSER_DOWNLOAD_URL" ] && echo "📥 ダウンロードURL(ブラウザ): $BROWSER_DOWNLOAD_URL"
-          
-          # SDKをダウンロード（認証ヘッダーを付ける）
-          echo "⬇️  SDKをダウンロード中..."
-          echo "   ダウンロードURL: ${BROWSER_DOWNLOAD_URL:-$API_DOWNLOAD_URL}"
-          echo "   認証: $([ -n "$GITHUB_TOKEN" ] && echo "あり" || echo "なし")"
-          
-          # まず認証付きで試す
-          CURL_OUTPUT=$(curl -L -w "\nHTTP_STATUS:%{http_code}" \
-               -H "Authorization: token $GITHUB_TOKEN" \
-               -H "Accept: application/octet-stream" \
-               -H "User-Agent: GitHub-Actions" \
-               -o AE_SDK.zip \
-               -s -S "$API_DOWNLOAD_URL" 2>&1)
-          
-          CURL_EXIT_CODE=$?
-          HTTP_STATUS=$(echo "$CURL_OUTPUT" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
-          
-          # エラーメッセージを取得（HTTP_STATUS行を除く）
-          CURL_ERROR=$(echo "$CURL_OUTPUT" | grep -v "HTTP_STATUS:" || echo "")
-          
-          echo "📊 HTTPステータス: $HTTP_STATUS"
-          echo "📊 curl終了コード: $CURL_EXIT_CODE"
-          
-          if [ -n "$CURL_ERROR" ]; then
-            echo "📊 curlエラーメッセージ:"
-            echo "$CURL_ERROR" | head -10
-          fi
-          
-          # HTTPステータスが200でない場合、またはcurlが失敗した場合
-          if [ "$HTTP_STATUS" != "200" ] || [ "$CURL_EXIT_CODE" != "0" ]; then
-            echo "⚠️  認証付きダウンロードに失敗しました (HTTP $HTTP_STATUS, exit $CURL_EXIT_CODE)"
-            
-            # ファイルが存在する場合は削除
-            [ -f "AE_SDK.zip" ] && rm -f AE_SDK.zip
-            
-            # 認証なしで試す（パブリックリポジトリの場合）
-            echo "試行: 認証なしでダウンロードを試みます..."
-            CURL_OUTPUT2=$(curl -L -w "\nHTTP_STATUS:%{http_code}" \
-                 -H "Accept: application/octet-stream" \
-                 -H "User-Agent: GitHub-Actions" \
-                 -o AE_SDK.zip \
-                 -s -S "${BROWSER_DOWNLOAD_URL:-$API_DOWNLOAD_URL}" 2>&1)
-            
-            CURL_EXIT_CODE2=$?
-            HTTP_STATUS2=$(echo "$CURL_OUTPUT2" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
-            CURL_ERROR2=$(echo "$CURL_OUTPUT2" | grep -v "HTTP_STATUS:" || echo "")
-            
-            echo "📊 HTTPステータス (認証なし): $HTTP_STATUS2"
-            echo "📊 curl終了コード (認証なし): $CURL_EXIT_CODE2"
-            
-            if [ -n "$CURL_ERROR2" ]; then
-              echo "📊 curlエラーメッセージ (認証なし):"
-              echo "$CURL_ERROR2" | head -10
-            fi
-            
-            if [ "$HTTP_STATUS2" != "200" ] || [ "$CURL_EXIT_CODE2" != "0" ]; then
-              echo "❌ SDKのダウンロードに失敗しました"
-              echo ""
-              echo "デバッグ情報:"
-              echo "  ダウンロードURL: ${BROWSER_DOWNLOAD_URL:-$API_DOWNLOAD_URL}"
-              echo "  認証付き: HTTP $HTTP_STATUS, exit $CURL_EXIT_CODE"
-              echo "  認証なし: HTTP $HTTP_STATUS2, exit $CURL_EXIT_CODE2"
-              echo "  トークン設定: $([ -n "$GITHUB_TOKEN" ] && echo "あり (長さ: ${#GITHUB_TOKEN})" || echo "なし")"
-              echo ""
-              echo "考えられる原因:"
-              echo "  1. GitHub Personal Access Token (PAT) の権限が不足している"
-              echo "  2. プライベートリポジトリへのアクセス権限がない"
-              echo "  3. トークンが期限切れまたは無効"
-              echo "  4. ダウンロードURLが無効またはアクセスできない"
-              echo "  5. ネットワークエラーまたはタイムアウト"
-              exit 1
-            else
-              echo "✅ 認証なしでダウンロード成功"
-            fi
-          else
-            echo "✅ 認証付きでダウンロード成功"
-          fi
-          
-          # ダウンロードしたファイルの確認
-          if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
-            echo "❌ ダウンロードしたファイルが無効です"
-            exit 1
-          fi
-          
-          echo "✅ ダウンロード完了 ($(du -h AE_SDK.zip | cut -f1))"
-          
-          # SDKを展開（テンポラリディレクトリへ）
-          echo "📦 SDKを展開中..."
-          EXTRACT_DIR=$(mktemp -d)
-          if ! unzip -q AE_SDK.zip -d "$EXTRACT_DIR"; then
-            echo "❌ SDKの展開に失敗しました"
-            ls -la "$EXTRACT_DIR" || true
-            exit 1
-          fi
-
-          HEADERS_SRC=""
-          UTIL_SRC=""
-
-          extract_archive_file() {
-            local archive="$1"
-            local destination="$2"
-            local lower
-            lower=$(printf '%s' "$archive" | tr '[:upper:]' '[:lower:]')
-
-            mkdir -p "$destination"
-
-            if [[ "$lower" == *.tar.zst || "$lower" == *.tar.zstd ]]; then
-              if tar --help 2>&1 | grep -q -- "--zstd"; then
-                tar --zstd -xf "$archive" -C "$destination"
-              elif command -v zstd >/dev/null 2>&1; then
-                local tmp_tar="$destination/$(basename "${archive%.*}").tar"
-                zstd -d "$archive" -o "$tmp_tar"
-                tar -xf "$tmp_tar" -C "$destination"
-                rm -f "$tmp_tar"
-              else
-                echo "⚠️  zstdコマンドが無いため展開できません: $archive"
-                return 1
-              fi
-            elif [[ "$lower" == *.tar.gz || "$lower" == *.tgz ]]; then
-              tar -xzf "$archive" -C "$destination"
-            elif [[ "$lower" == *.tar.bz2 || "$lower" == *.tbz || "$lower" == *.tbz2 ]]; then
-              tar -xjf "$archive" -C "$destination"
-            elif [[ "$lower" == *.tar.xz || "$lower" == *.txz ]]; then
-              tar -xJf "$archive" -C "$destination"
-            elif [[ "$lower" == *.tar ]]; then
-              tar -xf "$archive" -C "$destination"
-            elif [[ "$lower" == *.zst || "$lower" == *.zstd ]]; then
-              if command -v zstd >/dev/null 2>&1; then
-                local output="$destination/$(basename "${archive%.*}")"
-                zstd -d "$archive" -o "$output"
-              else
-                echo "⚠️  zstdコマンドが無いため展開できません: $archive"
-                return 1
-              fi
-            elif [[ "$lower" == *.gz ]]; then
-              gunzip -c "$archive" > "$destination/$(basename "${archive%.*}")"
-            elif [[ "$lower" == *.bz2 ]]; then
-              bunzip2 -c "$archive" > "$destination/$(basename "${archive%.*}")"
-            elif [[ "$lower" == *.xz ]]; then
-              unxz -c "$archive" > "$destination/$(basename "${archive%.*}")"
-            elif [[ "$lower" == *.zip ]]; then
-              unzip -q "$archive" -d "$destination"
-            else
-              return 1
-            fi
-
-            return 0
-          }
-
-          extract_nested_archives() {
-            local iteration=0
-            while [ $iteration -lt 6 ]; do
-              local found=0
-              while IFS= read -r -d '' archive; do
-                [ -f "$archive" ] || continue
-                local base
-                base=$(basename "$archive")
-                local dest="$EXTRACT_DIR/nested_${iteration}_${base%.*}_$$"
-                if extract_archive_file "$archive" "$dest"; then
-                  rm -f "$archive"
-                  found=1
-                else
-                  rm -rf "$dest"
-                fi
-              done < <(find "$EXTRACT_DIR" -type f                 \( -name "*.zip" -o -name "*.tar" -o -name "*.tgz" -o -name "*.tar.gz" -o -name "*.tbz" -o -name "*.tar.bz2" -o -name "*.txz" -o -name "*.tar.xz" -o -name "*.tar.zst" -o -name "*.tar.zstd" -o -name "*.zst" -o -name "*.zstd" \) -print0)
-
-              [ $found -eq 0 ] && break
-              iteration=$((iteration+1))
-            done
-          }
-
-          locate_sources_in_dir() {
-            local search_root="$1"
-            while IFS= read -r headers_path; do
-              local parent
-              parent="$(dirname "$headers_path")"
-              if [ -d "$parent/Util" ]; then
-                HEADERS_SRC="$headers_path"
-                UTIL_SRC="$parent/Util"
-                return 0
-              fi
-            done < <(find "$search_root" -type d -name "Headers" 2>/dev/null)
-            return 1
-          }
-
-          copy_sources_to_local() {
-            local temp_root="$EXTRACT_DIR/copied_$(date +%s)"
-            mkdir -p "$temp_root"
-            cp -R "$HEADERS_SRC" "$temp_root/Headers"
-            cp -R "$UTIL_SRC" "$temp_root/Util"
-            HEADERS_SRC="$temp_root/Headers"
-            UTIL_SRC="$temp_root/Util"
-          }
-
-          run_extract_scripts() {
-            local search_root="$1"
-            local scripts=()
-            while IFS= read -r script_path; do
-              scripts+=("$script_path")
-            done < <(find "$search_root" -type f -name "extractzstd.sh" 2>/dev/null)
-
-            if [ "${#scripts[@]}" -eq 0 ]; then
-              echo "ℹ️ extractzstd.sh は見つかりませんでした (スキップ)"
-              return 0
-            fi
-
-            for script_path in "${scripts[@]}"; do
-              [ -f "$script_path" ] || continue
-              echo "🧰 extractスクリプトを実行: $script_path"
-              chmod +x "$script_path" || true
-              (cd "$(dirname "$script_path")" && bash "$(basename "$script_path")")
-            done
-          }
-
-          run_extract_scripts "$EXTRACT_DIR"
-
-          locate_sources_in_dir "$EXTRACT_DIR" || true
-
-          if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
-            extract_nested_archives
-            locate_sources_in_dir "$EXTRACT_DIR" || true
-          fi
-
-          if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
-            DMG_FILE=$(find "$EXTRACT_DIR" -type f -name "*.dmg" | head -1)
-            if [ -n "$DMG_FILE" ]; then
-              echo "💿 DMGをマウントします: $DMG_FILE"
-              MOUNT_POINT=$(mktemp -d)
-              if hdiutil attach "$DMG_FILE" -mountpoint "$MOUNT_POINT" -quiet; then
-                if locate_sources_in_dir "$MOUNT_POINT"; then
-                  copy_sources_to_local
-                fi
-                hdiutil detach "$MOUNT_POINT" -quiet || true
-              else
-                echo "⚠️  DMGのマウントに失敗しました: $DMG_FILE"
-              fi
-            fi
-          fi
-
-          if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
-            extract_nested_archives
-            locate_sources_in_dir "$EXTRACT_DIR" || true
-          fi
-
-          if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
-            echo "❌ SDK内に Headers/Util が見つかりません"
-            find "$EXTRACT_DIR" -type d | head -40
-            exit 1
-          fi
-          mkdir -p "$EXPECTED_SDK_PATH"
-          rm -rf "$EXPECTED_SDK_PATH/Headers" "$EXPECTED_SDK_PATH/Util"
-          cp -R "$HEADERS_SRC" "$EXPECTED_SDK_PATH/Headers"
-          cp -R "$UTIL_SRC" "$EXPECTED_SDK_PATH/Util"
-
-          # クリーンアップ
-          rm -f AE_SDK.zip
-          rm -rf "$EXTRACT_DIR"
-          
-          # 最終確認
-          if [ -d "$EXPECTED_SDK_PATH/Headers" ] && [ -d "$EXPECTED_SDK_PATH/Util" ]; then
-            echo "✅ AeSDKのセットアップが完了しました"
-            echo "📁 AeSDKパス: $EXPECTED_SDK_PATH"
-            echo "📁 Headers: $EXPECTED_SDK_PATH/Headers ($(ls -1 "$EXPECTED_SDK_PATH/Headers" | wc -l | xargs) ファイル)"
-            echo "📁 Util: $EXPECTED_SDK_PATH/Util ($(ls -1 "$EXPECTED_SDK_PATH/Util" | wc -l | xargs) ファイル)"
-          else
-            echo "❌ AeSDKのセットアップに失敗しました"
-            echo "想定パス: $EXPECTED_SDK_PATH"
-            echo "存在確認:"
-            [ -d "$EXPECTED_SDK_PATH" ] && echo "  - ディレクトリは存在します" || echo "  - ディレクトリが存在しません"
-            [ -d "$EXPECTED_SDK_PATH/Headers" ] && echo "  - Headers/ は存在します" || echo "  - Headers/ が存在しません"
-            [ -d "$EXPECTED_SDK_PATH/Util" ] && echo "  - Util/ は存在します" || echo "  - Util/ が存在しません"
-            echo ""
-            echo "展開されたファイル:"
-            ls -la "$(dirname "$EXPECTED_SDK_PATH")" | head -20
-            exit 1
-          fi
-
-      # 6. Windows用: GitHubリリースからAE SDKをダウンロード
-      - name: Download AE SDK from GitHub Release (Windows)
+      - name: Build BuildAll.sln (Windows)
         if: matrix.platform == 'win'
         shell: pwsh
-        env:
-          AE_SDK_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
         run: |
-          $script = Join-Path "${{ github.workspace }}" ".github\\scripts\\setup-ae-sdk-windows.ps1"
-          $params = @{
-            ExpectedSdkPath = "${{ steps.project_path.outputs.expected_sdk_path }}"
-            ProjectDir      = "${{ steps.project_path.outputs.project_dir }}"
-            SdkAsset        = "${{ matrix.sdk_file }}"
-            Repo            = "rebuildup/my-ae-sdk-storage"
-            ReleaseTags     = @('sdk','ae-sdk_25.6_61','v25.6.61','25.6.61')
+          Write-Host "🔨 BuildAll.sln をビルドして依存関係を整えます"
+          
+          Set-Location $env:SDK_ROOT
+          
+          # BuildAll.sln を探す
+          $buildSln = $null
+          if (Test-Path "BuildAll.sln") {
+            $buildSln = "BuildAll.sln"
+          } elseif (Test-Path "Examples\BuildAll.sln") {
+            $buildSln = "Examples\BuildAll.sln"
+            Set-Location Examples
           }
-          if ($env:AE_SDK_TOKEN) {
-            $params['Token'] = $env:AE_SDK_TOKEN
+          
+          if ($buildSln) {
+            Write-Host "📦 $buildSln をビルド中..."
+            
+            try {
+              msbuild $buildSln `
+                /p:Configuration=Debug `
+                /p:Platform=x64 `
+                /t:Build `
+                /v:minimal `
+                /m
+              
+              Write-Host "✅ BuildAll.sln のビルドが完了しました"
+            } catch {
+              Write-Host "⚠️ BuildAll.sln のビルドに失敗しましたが、続行します"
+              Write-Host $_.Exception.Message
+            }
+          } else {
+            Write-Host "⚠️ BuildAll.sln が見つかりません。スキップします"
+            Get-ChildItem -Filter "*.sln" -Recurse -Depth 2 | Select-Object -First 5 | Format-Table
           }
-          & $script @params
-      - name: Build Xcode Project (Unsigned)
+
+      # ==================== プラグインのビルド ====================
+      - name: Build Plugin (Mac)
         if: matrix.platform == 'mac'
         run: |
-          set -e  # エラー時に即座に終了
+          set -e
           
-          PROJECT_DIR="${{ steps.project_path.outputs.project_dir }}"
-          BUILD_DIR="${{ steps.project_path.outputs.build_dir }}"
+          echo "🔨 sep_color プラグインをビルド"
           
-          echo "📁 プロジェクトディレクトリ: $PROJECT_DIR"
-          echo "📁 ビルドディレクトリ: $BUILD_DIR"
-          
-          cd "$BUILD_DIR"
+          cd "$PLUGIN_DIR/Mac"
           
           # プロジェクトファイルの確認
           if [ ! -f "sep_color.xcodeproj/project.pbxproj" ]; then
-            echo "❌ Xcodeプロジェクトファイルが見つかりません: $BUILD_DIR/sep_color.xcodeproj"
+            echo "❌ Xcodeプロジェクトが見つかりません"
+            ls -la
             exit 1
           fi
           
-          echo "🔨 Xcodeビルドを開始します..."
-          
-          # xcodebuildを実行（エラーメッセージを表示）
-          if ! xcodebuild build \
+          # ビルド
+          xcodebuild build \
             -project sep_color.xcodeproj \
             -target sep_color \
             -configuration Debug \
@@ -570,504 +295,66 @@ jobs:
             CONFIGURATION_BUILD_DIR="$(pwd)/build" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild.log; then
-            echo "❌ Xcodeビルドに失敗しました"
-            echo ""
-            echo "ビルドログの最後の50行:"
-            tail -50 xcodebuild.log || true
-            echo ""
-            echo "エラーメッセージ:"
-            grep -i "error" xcodebuild.log | tail -20 || true
-            exit 1
-          fi
-          
-          echo "✅ Xcodeビルドが完了しました"
+            CODE_SIGNING_ALLOWED=NO
           
           # ビルド成果物の確認
-          echo "📦 ビルド成果物を検索:"
           PLUGIN_PATH=$(find build -name "sep_color.plugin" -type d 2>/dev/null | head -1)
           if [ -n "$PLUGIN_PATH" ]; then
-            echo "✅ ビルド成果物が見つかりました: $PLUGIN_PATH"
-            echo "📊 ファイルサイズ: $(du -h "$PLUGIN_PATH" | cut -f1)"
+            echo "✅ ビルド成功: $PLUGIN_PATH"
+            
+            # アーティファクト用ディレクトリにコピー
+            mkdir -p "${{ github.workspace }}/artifacts"
+            cp -R "$PLUGIN_PATH" "${{ github.workspace }}/artifacts/"
           else
-            echo "⚠️  ビルド成果物が見つかりませんでした"
-            echo "検索パス: $BUILD_DIR/build"
-            find build -type d -name "*.plugin" 2>/dev/null || true
-            echo ""
-            echo "ビルドディレクトリの内容:"
-            ls -la build 2>/dev/null || true
+            echo "❌ ビルド成果物が見つかりません"
+            ls -la build/
             exit 1
           fi
 
-      # 8. Windows用: MSBuildビルドの実行
-      - name: Build Visual Studio Project (Unsigned)
+      - name: Build Plugin (Windows)
         if: matrix.platform == 'win'
+        shell: pwsh
         run: |
-          $PROJECT_DIR = "${{ steps.project_path.outputs.project_dir }}"
-          $BUILD_DIR = "${{ steps.project_path.outputs.build_dir }}"
+          Write-Host "🔨 sep_color プラグインをビルド"
           
-          Set-Location $BUILD_DIR
+          Set-Location "$env:PLUGIN_DIR\Win"
           
-          # MSBuildでビルド
+          # ソリューションファイルの確認
+          if (-not (Test-Path "sep_color.sln")) {
+            Write-Host "❌ ソリューションファイルが見つかりません"
+            Get-ChildItem
+            exit 1
+          }
+          
+          # ビルド
           msbuild sep_color.sln `
             /p:Configuration=Debug `
             /p:Platform=x64 `
-            /p:OutDir="$BUILD_DIR\build\x64\Debug\" `
             /t:Build `
-            /v:minimal
+            /v:minimal `
+            /m
           
           # ビルド成果物の確認
-          Write-Output "📦 ビルド成果物を検索:"
-          $AEX_PATH = Get-ChildItem -Path "$BUILD_DIR\build" -Filter "sep_color.aex" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($AEX_PATH) {
-            Write-Output "✅ ビルド成果物が見つかりました: $($AEX_PATH.FullName)"
+          $aexPath = Get-ChildItem -Path . -Filter "sep_color.aex" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          
+          if ($aexPath) {
+            Write-Host "✅ ビルド成功: $($aexPath.FullName)"
+            
+            # アーティファクト用ディレクトリにコピー
+            $artifactsDir = "${{ github.workspace }}\artifacts"
+            New-Item -ItemType Directory -Path $artifactsDir -Force | Out-Null
+            Copy-Item -Path $aexPath.FullName -Destination $artifactsDir -Force
           } else {
-            Write-Output "⚠️  ビルド成果物が見つかりませんでした"
-            Get-ChildItem -Path "$BUILD_DIR\build" -Filter "*.aex" -Recurse -ErrorAction SilentlyContinue
+            Write-Host "❌ ビルド成果物が見つかりません"
+            Get-ChildItem -Recurse | Where-Object { $_.Extension -eq ".aex" }
+            exit 1
           }
 
-      # 9. Mac用: .pluginバンドルのZIP圧縮
-      - name: Compress .plugin Bundle
-        if: success() && matrix.platform == 'mac'
-        run: |
-          PROJECT_DIR="${{ steps.project_path.outputs.project_dir }}"
-          BUILD_DIR="${{ steps.project_path.outputs.build_dir }}"
-          
-          cd "$BUILD_DIR/build"
-          
-          PLUGIN_PATH=$(find . -name "sep_color.plugin" -type d 2>/dev/null | head -1)
-          if [ -n "$PLUGIN_PATH" ]; then
-            ditto -c -k --sequesterRsrc "$PLUGIN_PATH" "../sep_color-macOS-unsigned.zip"
-            echo "✅ プラグインバンドルを圧縮しました: sep_color-macOS-unsigned.zip"
-          fi
-
-      # 10. Windows用: .aexファイルのZIP圧縮
-      - name: Compress .aex File
-        if: success() && matrix.platform == 'win'
-        run: |
-          $BUILD_DIR = "${{ steps.project_path.outputs.build_dir }}"
-          
-          $AEX_PATH = Get-ChildItem -Path "$BUILD_DIR\build" -Filter "sep_color.aex" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($AEX_PATH) {
-            $ZIP_PATH = Join-Path $BUILD_DIR "sep_color-Windows-unsigned.zip"
-            Compress-Archive -Path $AEX_PATH.FullName -DestinationPath $ZIP_PATH -Force
-            Write-Output "✅ プラグインファイルを圧縮しました: sep_color-Windows-unsigned.zip"
-          }
-
-      # 11. テスト用アーティファクトのアップロード
-      - name: Upload Test Artifact
-        if: success()
+      # ==================== アーティファクトのアップロード ====================
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sep_color-plugin-${{ matrix.platform }}-unsigned
-          path: |
-            Template/sep_color/Mac/sep_color-macOS-unsigned.zip
-            Template/sep_color/Win/sep_color-Windows-unsigned.zip
-            sep_color/Mac/sep_color-macOS-unsigned.zip
-            sep_color/Win/sep_color-Windows-unsigned.zip
-          retention-days: 7
-          if-no-files-found: warn
-          compression-level: 6
-
-  # ============================================
-  # ジョブ2: リリースビルド (署名付き)
-  # タグがプッシュされた時のみ実行 - Mac/Windows両方
-  # ============================================
-  build-release:
-    name: Build, Sign, and Package Release
-    strategy:
-      matrix:
-        os: [macos-14, windows-latest]
-        include:
-          - os: macos-14
-            sdk_file: AfterEffectsSDK_25.6_61_mac.zip
-            platform: mac
-          - os: windows-latest
-            sdk_file: AfterEffectsSDK_25.6_61_win.zip
-            platform: win
-    
-    runs-on: ${{ matrix.os }}
-    
-    # タグがプッシュされた時のみ、このジョブを実行
-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Set up Xcode
-        if: matrix.platform == 'mac'
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '15.2'
-
-      - name: Accept Xcode license
-        if: matrix.platform == 'mac'
-        run: sudo xcodebuild -license accept
-
-      - name: Set up MSBuild
-        if: matrix.platform == 'win'
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Determine project path (Mac)
-        if: matrix.platform == 'mac'
-        id: project_path_mac
-        run: |
-          REPO_ROOT="$(pwd)"
-          PROJECT_DIR="$REPO_ROOT"
-          
-          if [ -d "Template/sep_color" ]; then
-            PROJECT_DIR="$REPO_ROOT/Template/sep_color"
-          elif [ -d "sep_color" ]; then
-            PROJECT_DIR="$REPO_ROOT/sep_color"
-          fi
-          
-          BUILD_DIR="$PROJECT_DIR/Mac"
-          EXPECTED_SDK_PATH="$(cd "$BUILD_DIR" && cd ../../.. && pwd)"
-          
-          echo "project_dir=$PROJECT_DIR" >> $GITHUB_OUTPUT
-          echo "build_dir=$BUILD_DIR" >> $GITHUB_OUTPUT
-          echo "expected_sdk_path=$EXPECTED_SDK_PATH" >> $GITHUB_OUTPUT
-
-      - name: Determine project path (Windows)
-        if: matrix.platform == 'win'
-        id: project_path_win
-        shell: powershell
-        run: |
-          $REPO_ROOT = Get-Location
-          $PROJECT_DIR = $REPO_ROOT
-          
-          if (Test-Path "Template\sep_color") {
-            $PROJECT_DIR = Join-Path $REPO_ROOT "Template\sep_color"
-          } elseif (Test-Path "sep_color") {
-            $PROJECT_DIR = Join-Path $REPO_ROOT "sep_color"
-          }
-          
-          $BUILD_DIR = Join-Path $PROJECT_DIR "Win"
-          $EXPECTED_SDK_PATH = (Get-Item (Join-Path $BUILD_DIR "..\..\..")).FullName
-          
-          Write-Output "project_dir=$PROJECT_DIR" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Output "build_dir=$BUILD_DIR" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Output "expected_sdk_path=$EXPECTED_SDK_PATH" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      - name: Set project path outputs
-        id: project_path
-        run: |
-          if [ "${{ matrix.platform }}" == "mac" ]; then
-            echo "project_dir=${{ steps.project_path_mac.outputs.project_dir }}" >> $GITHUB_OUTPUT
-            echo "build_dir=${{ steps.project_path_mac.outputs.build_dir }}" >> $GITHUB_OUTPUT
-            echo "expected_sdk_path=${{ steps.project_path_mac.outputs.expected_sdk_path }}" >> $GITHUB_OUTPUT
-          else
-            echo "project_dir=${{ steps.project_path_win.outputs.project_dir }}" >> $GITHUB_OUTPUT
-            echo "build_dir=${{ steps.project_path_win.outputs.build_dir }}" >> $GITHUB_OUTPUT
-            echo "expected_sdk_path=${{ steps.project_path_win.outputs.expected_sdk_path }}" >> $GITHUB_OUTPUT
-          fi
-        shell: bash
-
-      - name: Download AE SDK from GitHub Release (Mac)
-        if: matrix.platform == 'mac'
-        env:
-          GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
-        run: |
-          set -e  # エラー時に即座に終了
-          
-          EXPECTED_SDK_PATH="${{ steps.project_path.outputs.expected_sdk_path }}"
-          
-          if [ -d "$EXPECTED_SDK_PATH/Headers" ] && [ -d "$EXPECTED_SDK_PATH/Util" ]; then
-            echo "✅ AeSDKが既に存在します"
-            exit 0
-          fi
-          
-          # GitHub APIを使用してリリース情報を取得
-          # リリースタグの候補（優先順位順）
-          RELEASE_TAG_CANDIDATES=("sdk" "ae-sdk_25.6_61" "v25.6.61" "25.6.61")
-          REPO="rebuildup/my-ae-sdk-storage"
-          
-          echo "📦 GitHubリリースからAeSDKをダウンロードします"
-          echo "   リポジトリ: $REPO"
-          echo "   SDKファイル: ${{ matrix.sdk_file }}"
-          
-          # トークンの確認
-          if [ -z "$GITHUB_TOKEN" ]; then
-            echo "❌ GITHUB_TOKENが設定されていません"
-            exit 1
-          fi
-          
-          # リリース情報を取得（複数のタグ候補を試す）
-          RELEASE_JSON=""
-          HTTP_STATUS=""
-          FOUND_TAG=""
-          
-          for RELEASE_TAG in "${RELEASE_TAG_CANDIDATES[@]}"; do
-            echo "🔍 リリース情報を取得中... (タグ: $RELEASE_TAG)"
-            RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" 2>&1)
-            
-            HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
-            RELEASE_JSON=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
-            
-            echo "📊 HTTPステータス: $HTTP_STATUS"
-            
-            if [ "$HTTP_STATUS" == "200" ]; then
-              FOUND_TAG="$RELEASE_TAG"
-              echo "✅ リリースを見つけました: $FOUND_TAG"
-              break
-            else
-              echo "⚠️  タグ '$RELEASE_TAG' が見つかりませんでした (HTTP $HTTP_STATUS)"
-            fi
-          done
-          
-          # どのタグも見つからない場合、最新リリースを試す
-          if [ -z "$FOUND_TAG" ]; then
-            echo "⚠️  指定されたタグが見つかりません。最新リリースを取得します..."
-            RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/$REPO/releases/latest" 2>&1)
-            
-            HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
-            RELEASE_JSON=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
-            
-            if [ "$HTTP_STATUS" == "200" ]; then
-              FOUND_TAG=$(echo "$RELEASE_JSON" | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4)
-              echo "✅ 最新リリースを見つけました: $FOUND_TAG"
-            fi
-          fi
-          
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "❌ リリース情報の取得に失敗しました (HTTP $HTTP_STATUS)"
-            echo "$RELEASE_JSON" | head -30
-            echo ""
-            echo "考えられる原因:"
-            echo "  1. リポジトリが存在しない、またはプライベートリポジトリでアクセス権限がない"
-            echo "  2. リリースタグが存在しない（試したタグ: ${RELEASE_TAG_CANDIDATES[*]}）"
-            echo "  3. GitHub Personal Access Token (PAT) の権限が不足している"
-            echo "  4. AE_SDK_DOWNLOAD_TOKEN が正しく設定されていない"
-            exit 1
-          fi
-          
-          # アセットの情報を取得
-          ASSET_NAME="${{ matrix.sdk_file }}"
-          
-          # JSONからアセット情報を抽出（より確実な方法）
-          ASSET_INFO=$(echo "$RELEASE_JSON" | grep -A 30 "\"name\":\s*\"$ASSET_NAME\"" | head -30)
-          
-          if [ -z "$ASSET_INFO" ]; then
-            echo "❌ SDKファイルが見つかりません: $ASSET_NAME"
-            echo "利用可能なアセットの一覧:"
-            echo "$RELEASE_JSON" | grep -o '"name":"[^"]*"' | head -10
-            exit 1
-          fi
-          
-          # browser_download_urlを取得
-          DOWNLOAD_URL=$(echo "$ASSET_INFO" | grep -o "\"browser_download_url\":\s*\"[^\"]*\"" | head -1 | cut -d'"' -f4)
-          
-          if [ -z "$DOWNLOAD_URL" ]; then
-            echo "❌ ダウンロードURLが見つかりません: $ASSET_NAME"
-            echo "アセット情報:"
-            echo "$ASSET_INFO" | head -20
-            exit 1
-          fi
-          
-          echo "📥 ダウンロードURL: $DOWNLOAD_URL"
-          
-          # SDKをダウンロード（認証ヘッダーを付ける）
-          echo "⬇️  SDKをダウンロード中..."
-          echo "   ダウンロードURL: $DOWNLOAD_URL"
-          echo "   認証: $([ -n "$GITHUB_TOKEN" ] && echo "あり" || echo "なし")"
-          
-          # まず認証付きで試す
-          CURL_OUTPUT=$(curl -L -w "\nHTTP_STATUS:%{http_code}" \
-               -H "Authorization: token $GITHUB_TOKEN" \
-               -H "Accept: application/octet-stream" \
-               -H "User-Agent: GitHub-Actions" \
-               -o AE_SDK.zip \
-               -s -S "$DOWNLOAD_URL" 2>&1)
-          
-          CURL_EXIT_CODE=$?
-          HTTP_STATUS=$(echo "$CURL_OUTPUT" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
-          
-          # エラーメッセージを取得（HTTP_STATUS行を除く）
-          CURL_ERROR=$(echo "$CURL_OUTPUT" | grep -v "HTTP_STATUS:" || echo "")
-          
-          echo "📊 HTTPステータス: $HTTP_STATUS"
-          echo "📊 curl終了コード: $CURL_EXIT_CODE"
-          
-          if [ -n "$CURL_ERROR" ]; then
-            echo "📊 curlエラーメッセージ:"
-            echo "$CURL_ERROR" | head -10
-          fi
-          
-          # HTTPステータスが200でない場合、またはcurlが失敗した場合
-          if [ "$HTTP_STATUS" != "200" ] || [ "$CURL_EXIT_CODE" != "0" ]; then
-            echo "⚠️  認証付きダウンロードに失敗しました (HTTP $HTTP_STATUS, exit $CURL_EXIT_CODE)"
-            
-            # ファイルが存在する場合は削除
-            [ -f "AE_SDK.zip" ] && rm -f AE_SDK.zip
-            
-            # 認証なしで試す（パブリックリポジトリの場合）
-            echo "試行: 認証なしでダウンロードを試みます..."
-            CURL_OUTPUT2=$(curl -L -w "\nHTTP_STATUS:%{http_code}" \
-                 -H "Accept: application/octet-stream" \
-                 -H "User-Agent: GitHub-Actions" \
-                 -o AE_SDK.zip \
-                 -s -S "$DOWNLOAD_URL" 2>&1)
-            
-            CURL_EXIT_CODE2=$?
-            HTTP_STATUS2=$(echo "$CURL_OUTPUT2" | grep "HTTP_STATUS:" | cut -d: -f2 || echo "unknown")
-            CURL_ERROR2=$(echo "$CURL_OUTPUT2" | grep -v "HTTP_STATUS:" || echo "")
-            
-            echo "📊 HTTPステータス (認証なし): $HTTP_STATUS2"
-            echo "📊 curl終了コード (認証なし): $CURL_EXIT_CODE2"
-            
-            if [ -n "$CURL_ERROR2" ]; then
-              echo "📊 curlエラーメッセージ (認証なし):"
-              echo "$CURL_ERROR2" | head -10
-            fi
-            
-            if [ "$HTTP_STATUS2" != "200" ] || [ "$CURL_EXIT_CODE2" != "0" ]; then
-              echo "❌ SDKのダウンロードに失敗しました"
-              echo ""
-              echo "デバッグ情報:"
-              echo "  ダウンロードURL: $DOWNLOAD_URL"
-              echo "  認証付き: HTTP $HTTP_STATUS, exit $CURL_EXIT_CODE"
-              echo "  認証なし: HTTP $HTTP_STATUS2, exit $CURL_EXIT_CODE2"
-              echo "  トークン設定: $([ -n "$GITHUB_TOKEN" ] && echo "あり (長さ: ${#GITHUB_TOKEN})" || echo "なし")"
-              echo ""
-              echo "考えられる原因:"
-              echo "  1. GitHub Personal Access Token (PAT) の権限が不足している"
-              echo "  2. プライベートリポジトリへのアクセス権限がない"
-              echo "  3. トークンが期限切れまたは無効"
-              echo "  4. ダウンロードURLが無効またはアクセスできない"
-              echo "  5. ネットワークエラーまたはタイムアウト"
-              exit 1
-            else
-              echo "✅ 認証なしでダウンロード成功"
-            fi
-          else
-            echo "✅ 認証付きでダウンロード成功"
-          fi
-          
-          if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
-            echo "❌ ダウンロードしたファイルが無効です"
-            exit 1
-          fi
-          
-          echo "✅ ダウンロード完了 ($(du -h AE_SDK.zip | cut -f1))"
-          
-          mkdir -p "$(dirname "$EXPECTED_SDK_PATH")"
-          echo "📦 SDKを展開中..."
-          unzip -q AE_SDK.zip -d "$(dirname "$EXPECTED_SDK_PATH")" || {
-            unzip -q AE_SDK.zip
-            [ -d "Adobe-AE-SDK" ] && mv Adobe-AE-SDK "$EXPECTED_SDK_PATH" || \
-            [ -d "SDK" ] && mv SDK "$EXPECTED_SDK_PATH" || \
-            mkdir -p "$EXPECTED_SDK_PATH" && find . -maxdepth 1 -type d \( -name "Headers" -o -name "Util" \) -exec mv {} "$EXPECTED_SDK_PATH/" \;
-          }
-          rm -f AE_SDK.zip
-          
-          if [ ! -d "$EXPECTED_SDK_PATH/Headers" ] || [ ! -d "$EXPECTED_SDK_PATH/Util" ]; then
-            echo "❌ AeSDKのセットアップに失敗しました"
-            exit 1
-          fi
-          
-          echo "✅ AeSDKのセットアップが完了しました"
-
-      - name: Download AE SDK from GitHub Release (Windows)
-        if: matrix.platform == 'win'
-        shell: pwsh
-        env:
-          AE_SDK_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
-        run: |
-          $script = Join-Path "${{ github.workspace }}" ".github\\scripts\\setup-ae-sdk-windows.ps1"
-          $params = @{
-            ExpectedSdkPath = "${{ steps.project_path.outputs.expected_sdk_path }}"
-            ProjectDir      = "${{ steps.project_path.outputs.project_dir }}"
-            SdkAsset        = "${{ matrix.sdk_file }}"
-            Repo            = "rebuildup/my-ae-sdk-storage"
-            ReleaseTags     = @('sdk','ae-sdk_25.6_61','v25.6.61','25.6.61')
-          }
-          if ($env:AE_SDK_TOKEN) {
-            $params['Token'] = $env:AE_SDK_TOKEN
-          }
-          & $script @params
-      - name: Build Xcode Project (Signed)
-        if: matrix.platform == 'mac'
-        run: |
-          PROJECT_DIR="${{ steps.project_path.outputs.project_dir }}"
-          BUILD_DIR="${{ steps.project_path.outputs.build_dir }}"
-          
-          cd "$BUILD_DIR"
-          
-          xcodebuild build \
-            -project sep_color.xcodeproj \
-            -target sep_color \
-            -configuration Release \
-            -sdk macosx \
-            -arch x86_64 \
-            -arch arm64 \
-            -destination 'platform=macOS' \
-            CONFIGURATION_BUILD_DIR="$(pwd)/build"
-
-      # Windows用: MSBuildビルドの実行 (Release)
-      - name: Build Visual Studio Project (Release)
-        if: matrix.platform == 'win'
-        run: |
-          $PROJECT_DIR = "${{ steps.project_path.outputs.project_dir }}"
-          $BUILD_DIR = "${{ steps.project_path.outputs.build_dir }}"
-          
-          Set-Location $BUILD_DIR
-          
-          msbuild sep_color.sln `
-            /p:Configuration=Release `
-            /p:Platform=x64 `
-            /p:OutDir="$BUILD_DIR\build\x64\Release\" `
-            /t:Build `
-            /v:minimal
-
-      # Mac用: .pluginバンドルのZIP圧縮
-      - name: Compress .plugin Bundle
-        if: matrix.platform == 'mac'
-        run: |
-          PROJECT_DIR="${{ steps.project_path.outputs.project_dir }}"
-          BUILD_DIR="${{ steps.project_path.outputs.build_dir }}"
-          
-          cd "$BUILD_DIR/build"
-          
-          PLUGIN_PATH=$(find . -name "sep_color.plugin" -type d 2>/dev/null | head -1)
-          if [ -n "$PLUGIN_PATH" ]; then
-            ditto -c -k --sequesterRsrc "$PLUGIN_PATH" "../sep_color-macOS-${{ github.ref_name }}.zip"
-            echo "✅ プラグインバンドルを圧縮しました"
-          fi
-
-      # Windows用: .aexファイルのZIP圧縮
-      - name: Compress .aex File
-        if: matrix.platform == 'win'
-        run: |
-          $BUILD_DIR = "${{ steps.project_path.outputs.build_dir }}"
-          
-          $AEX_PATH = Get-ChildItem -Path "$BUILD_DIR\build" -Filter "sep_color.aex" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($AEX_PATH) {
-            $ZIP_PATH = Join-Path $BUILD_DIR "sep_color-Windows-${{ github.ref_name }}.zip"
-            Compress-Archive -Path $AEX_PATH.FullName -DestinationPath $ZIP_PATH -Force
-            Write-Output "✅ プラグインファイルを圧縮しました"
-          }
-
-      # リリース用アーティファクトのアップロード
-      - name: Upload Release Artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sep_color-plugin-${{ matrix.platform }}-${{ github.ref_name }}
-          path: |
-            Template/sep_color/Mac/sep_color-macOS-${{ github.ref_name }}.zip
-            Template/sep_color/Win/sep_color-Windows-${{ github.ref_name }}.zip
-            sep_color/Mac/sep_color-macOS-${{ github.ref_name }}.zip
-            sep_color/Win/sep_color-Windows-${{ github.ref_name }}.zip
-          retention-days: 90
-          if-no-files-found: warn
-          compression-level: 6
+          name: sep_color-${{ matrix.platform }}
+          path: artifacts/
+          retention-days: 30
+          if-no-files-found: error
