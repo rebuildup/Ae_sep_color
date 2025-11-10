@@ -59,8 +59,6 @@ jobs:
           RELEASE_TAG_CANDIDATES=("sdk" "ae-sdk_25.6_61" "v25.6.61" "25.6.61")
           
           echo "📦 プライベートリポジトリからAeSDKをダウンロードします"
-          echo "   リポジトリ: $REPO"
-          echo "   SDKファイル: ${{ matrix.sdk_file }}"
           
           if [ -z "$GITHUB_TOKEN" ]; then
             echo "❌ GITHUB_TOKENが設定されていません"
@@ -69,11 +67,7 @@ jobs:
           
           # リリース情報を取得
           RELEASE_JSON=""
-          HTTP_STATUS=""
-          FOUND_TAG=""
-          
           for RELEASE_TAG in "${RELEASE_TAG_CANDIDATES[@]}"; do
-            echo "🔍 リリース情報を取得中... (タグ: $RELEASE_TAG)"
             RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
               -H "Authorization: token $GITHUB_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
@@ -83,8 +77,7 @@ jobs:
             RELEASE_JSON=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
             
             if [ "$HTTP_STATUS" == "200" ]; then
-              FOUND_TAG="$RELEASE_TAG"
-              echo "✅ リリースを見つけました: $FOUND_TAG"
+              echo "✅ リリースを見つけました: $RELEASE_TAG"
               break
             fi
           done
@@ -110,9 +103,8 @@ jobs:
           curl -L \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/octet-stream" \
-            -H "User-Agent: GitHub-Actions" \
             -o AE_SDK.zip \
-            -s -S "$API_DOWNLOAD_URL"
+            -s "$API_DOWNLOAD_URL"
           
           if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
             echo "❌ ダウンロードに失敗しました"
@@ -131,8 +123,6 @@ jobs:
           $releaseTags = @("sdk", "ae-sdk_25.6_61", "v25.6.61", "25.6.61")
           
           Write-Host "📦 プライベートリポジトリからAeSDKをダウンロードします"
-          Write-Host "   リポジトリ: $repo"
-          Write-Host "   SDKファイル: ${{ matrix.sdk_file }}"
           
           if (-not $env:GITHUB_TOKEN) {
             Write-Host "❌ GITHUB_TOKENが設定されていません"
@@ -140,12 +130,8 @@ jobs:
           }
           
           # リリース情報を取得
-          $foundTag = $null
           $releaseJson = $null
-          
           foreach ($tag in $releaseTags) {
-            Write-Host "🔍 リリース情報を取得中... (タグ: $tag)"
-            
             try {
               $headers = @{
                 "Authorization" = "token $env:GITHUB_TOKEN"
@@ -153,11 +139,10 @@ jobs:
               }
               
               $releaseJson = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/tags/$tag" -Headers $headers -ErrorAction Stop
-              $foundTag = $tag
-              Write-Host "✅ リリースを見つけました: $foundTag"
+              Write-Host "✅ リリースを見つけました: $tag"
               break
             } catch {
-              Write-Host "⚠️  タグ '$tag' が見つかりませんでした"
+              continue
             }
           }
           
@@ -177,21 +162,19 @@ jobs:
           
           # SDKをダウンロード
           Write-Host "⬇️  SDKをダウンロード中..."
-          
           $headers = @{
             "Authorization" = "token $env:GITHUB_TOKEN"
             "Accept" = "application/octet-stream"
-            "User-Agent" = "GitHub-Actions"
           }
           
           Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "AE_SDK.zip"
           
-          if (-not (Test-Path "AE_SDK.zip") -or (Get-Item "AE_SDK.zip").Length -eq 0) {
+          if (-not (Test-Path "AE_SDK.zip")) {
             Write-Host "❌ ダウンロードに失敗しました"
             exit 1
           }
           
-          Write-Host "✅ ダウンロード完了 ($([math]::Round((Get-Item 'AE_SDK.zip').Length / 1MB, 2)) MB)"
+          Write-Host "✅ ダウンロード完了"
 
       # ==================== SDKを展開してセットアップ (Mac) ====================
       - name: Extract and Setup SDK (Mac)
@@ -202,20 +185,36 @@ jobs:
           echo "📦 SDKを展開してセットアップします"
           
           # 作業ディレクトリの作成
-          WORK_DIR="${{ github.workspace }}/ae_sdk_work"
-          mkdir -p "$WORK_DIR"
+          mkdir -p ae_sdk_work
+          cd ae_sdk_work
           
-          # SDKを展開
-          echo "📂 SDKを展開中..."
-          cd "$WORK_DIR"
-          unzip -q "${{ github.workspace }}/AE_SDK.zip"
+          # 外側のzipを展開
+          echo "📂 外側のzipを展開中..."
+          unzip -q ../AE_SDK.zip
           
-          # SDK root を見つける (Headers と Util が存在するディレクトリ)
+          # 展開されたディレクトリに移動
+          SDK_EXTRACT_DIR=$(find . -maxdepth 2 -type f -name "extractzstd.sh" -exec dirname {} \; | head -1)
+          
+          if [ -z "$SDK_EXTRACT_DIR" ]; then
+            echo "❌ extractzstd.shが見つかりません"
+            find . -name "*.sh"
+            exit 1
+          fi
+          
+          cd "$SDK_EXTRACT_DIR"
+          echo "📁 作業ディレクトリ: $(pwd)"
+          
+          # extractzstd.shを実行
+          echo "🔧 extractzstd.shを実行してSDKを展開します..."
+          chmod +x extractzstd.sh
+          ./extractzstd.sh
+          
+          # SDK rootを見つける
           SDK_ROOT=""
-          for dir in $(find . -type d -name "Headers"); do
+          for dir in $(find . -type d -name "Headers" 2>/dev/null); do
             parent=$(dirname "$dir")
-            if [ -d "$parent/Util" ]; then
-              SDK_ROOT="$parent"
+            if [ -d "$parent/Util" ] && [ -d "$parent/Examples" ]; then
+              SDK_ROOT=$(cd "$parent" && pwd)
               break
             fi
           done
@@ -226,16 +225,10 @@ jobs:
             exit 1
           fi
           
-          # 絶対パスに変換
-          SDK_ROOT=$(cd "$SDK_ROOT" && pwd)
-          
           echo "✅ SDK root: $SDK_ROOT"
           echo "SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
           
-          # Examples/Template ディレクトリを作成
-          mkdir -p "$SDK_ROOT/Examples/Template"
-          
-          rm -f "${{ github.workspace }}/AE_SDK.zip"
+          rm -f ../../AE_SDK.zip
 
       - name: Extract and Setup SDK (Windows)
         if: matrix.platform == 'win'
@@ -244,19 +237,35 @@ jobs:
           Write-Host "📦 SDKを展開してセットアップします"
           
           # 作業ディレクトリの作成
-          $workDir = "${{ github.workspace }}\ae_sdk_work"
-          New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+          New-Item -ItemType Directory -Path "ae_sdk_work" -Force | Out-Null
+          Set-Location "ae_sdk_work"
           
-          # SDKを展開
-          Write-Host "📂 SDKを展開中..."
-          Expand-Archive -Path "${{ github.workspace }}\AE_SDK.zip" -DestinationPath $workDir -Force
+          # 外側のzipを展開
+          Write-Host "📂 外側のzipを展開中..."
+          Expand-Archive -Path "..\AE_SDK.zip" -DestinationPath "." -Force
           
-          # SDK root を見つける
+          # extractzstd.batを探す
+          $extractScript = Get-ChildItem -Recurse -Filter "extractzstd.bat" | Select-Object -First 1
+          
+          if (-not $extractScript) {
+            Write-Host "❌ extractzstd.batが見つかりません"
+            Get-ChildItem -Recurse -Filter "*.bat"
+            exit 1
+          }
+          
+          Set-Location $extractScript.DirectoryName
+          Write-Host "📁 作業ディレクトリ: $(Get-Location)"
+          
+          # extractzstd.batを実行
+          Write-Host "🔧 extractzstd.batを実行してSDKを展開します..."
+          cmd /c extractzstd.bat
+          
+          # SDK rootを見つける
           $sdkRoot = $null
-          $headersDirs = Get-ChildItem $workDir -Directory -Recurse -Filter "Headers"
+          $headersDirs = Get-ChildItem -Recurse -Directory -Filter "Headers" -ErrorAction SilentlyContinue
           foreach ($dir in $headersDirs) {
             $parent = $dir.Parent.FullName
-            if (Test-Path "$parent\Util") {
+            if ((Test-Path "$parent\Util") -and (Test-Path "$parent\Examples")) {
               $sdkRoot = $parent
               break
             }
@@ -264,18 +273,48 @@ jobs:
           
           if (-not $sdkRoot) {
             Write-Host "❌ SDK root が見つかりません"
-            Get-ChildItem $workDir -Directory -Recurse -Depth 3 | Format-Table
+            Get-ChildItem -Recurse -Directory -Depth 3 | Format-Table
             exit 1
           }
           
           Write-Host "✅ SDK root: $sdkRoot"
           Add-Content -Path $env:GITHUB_ENV -Value "SDK_ROOT=$sdkRoot"
           
-          # Examples/Template ディレクトリを作成
-          $templateDir = "$sdkRoot\Examples\Template"
-          New-Item -ItemType Directory -Path $templateDir -Force | Out-Null
+          Remove-Item "..\AE_SDK.zip" -Force
+
+      # ==================== BuildAll.sln のビルド (Windowsのみ) ====================
+      - name: Build BuildAll.sln (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          Write-Host "🔨 BuildAll.sln をビルドして依存関係を整えます"
           
-          Remove-Item "${{ github.workspace }}\AE_SDK.zip" -Force
+          Set-Location $env:SDK_ROOT
+          
+          # BuildAll.sln を探す
+          $buildSln = $null
+          if (Test-Path "BuildAll.sln") {
+            $buildSln = "BuildAll.sln"
+          } elseif (Test-Path "Examples\BuildAll.sln") {
+            Set-Location Examples
+            $buildSln = "BuildAll.sln"
+          }
+          
+          if ($buildSln) {
+            Write-Host "📦 $buildSln をビルド中..."
+            
+            msbuild $buildSln `
+              /p:Configuration=Debug `
+              /p:Platform=x64 `
+              /t:Build `
+              /v:minimal `
+              /m `
+              /nologo
+            
+            Write-Host "✅ BuildAll.sln のビルドが完了しました"
+          } else {
+            Write-Host "⚠️ BuildAll.sln が見つかりません"
+          }
 
       # ==================== プラグインをSDK/Examples/Templateにコピー ====================
       - name: Copy plugin to SDK Template directory (Mac)
@@ -288,7 +327,7 @@ jobs:
           PLUGIN_DIR="$SDK_ROOT/Examples/Template/sep_color"
           mkdir -p "$PLUGIN_DIR"
           
-          # 必要なファイルのみをコピー
+          # 必要なファイルをコピー
           rsync -av \
             --exclude='.git' \
             --exclude='tmp' \
@@ -322,45 +361,6 @@ jobs:
           
           Write-Host "✅ プラグインをコピーしました: $pluginDir"
           Add-Content -Path $env:GITHUB_ENV -Value "PLUGIN_DIR=$pluginDir"
-
-      # ==================== BuildAll.sln のビルド (Windowsのみ) ====================
-      - name: Build BuildAll.sln (Windows)
-        if: matrix.platform == 'win'
-        shell: pwsh
-        run: |
-          Write-Host "🔨 BuildAll.sln をビルドして依存関係を整えます"
-          
-          Set-Location $env:SDK_ROOT
-          
-          # BuildAll.sln を探す
-          $buildSln = $null
-          if (Test-Path "BuildAll.sln") {
-            $buildSln = "BuildAll.sln"
-          } elseif (Test-Path "Examples\BuildAll.sln") {
-            $buildSln = "Examples\BuildAll.sln"
-            Set-Location Examples
-          }
-          
-          if ($buildSln) {
-            Write-Host "📦 $buildSln をビルド中..."
-            
-            try {
-              msbuild $buildSln `
-                /p:Configuration=Debug `
-                /p:Platform=x64 `
-                /t:Build `
-                /v:minimal `
-                /m `
-                /nologo
-              
-              Write-Host "✅ BuildAll.sln のビルドが完了しました"
-            } catch {
-              Write-Host "⚠️ BuildAll.sln のビルドに失敗しましたが、続行します"
-              Write-Host $_.Exception.Message
-            }
-          } else {
-            Write-Host "⚠️ BuildAll.sln が見つかりません。スキップします"
-          }
 
       # ==================== プラグインのビルド ====================
       - name: Build Plugin (Mac)
