@@ -31,7 +31,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # ==================== Mac環境のセットアップ ====================
       - name: Set up Xcode (Mac)
         if: matrix.platform == 'mac'
         uses: maxim-lobanov/setup-xcode@v1
@@ -42,13 +41,11 @@ jobs:
         if: matrix.platform == 'mac'
         run: sudo xcodebuild -license accept
 
-      # ==================== Windows環境のセットアップ ====================
       - name: Set up MSBuild (Windows)
         if: matrix.platform == 'win'
         uses: microsoft/setup-msbuild@v2
 
-      # ==================== プライベートリポジトリからSDKをダウンロード (Mac) ====================
-      - name: Download AE SDK from Private Repository (Mac)
+      - name: Download After Effects SDK (Mac)
         if: matrix.platform == 'mac'
         env:
           GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
@@ -58,14 +55,13 @@ jobs:
           REPO="rebuildup/my-ae-sdk-storage"
           RELEASE_TAG_CANDIDATES=("sdk" "ae-sdk_25.6_61" "v25.6.61" "25.6.61")
           
-          echo "📦 プライベートリポジトリからAeSDKをダウンロードします"
+          echo "Downloading After Effects SDK from private repository..."
           
           if [ -z "$GITHUB_TOKEN" ]; then
-            echo "❌ GITHUB_TOKENが設定されていません"
+            echo "Error: GITHUB_TOKEN not configured"
             exit 1
           fi
           
-          # リリース情報を取得
           RELEASE_JSON=""
           for RELEASE_TAG in "${RELEASE_TAG_CANDIDATES[@]}"; do
             RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
@@ -77,29 +73,27 @@ jobs:
             RELEASE_JSON=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
             
             if [ "$HTTP_STATUS" == "200" ]; then
-              echo "✅ リリースを見つけました: $RELEASE_TAG"
+              echo "Found release: $RELEASE_TAG"
               break
             fi
           done
           
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "❌ リリース情報の取得に失敗しました"
+            echo "Error: Failed to fetch release information"
             exit 1
           fi
           
-          # アセット情報を取得
           ASSET_NAME="${{ matrix.sdk_file }}"
           ASSET_JSON=$(echo "$RELEASE_JSON" | jq -c --arg name "$ASSET_NAME" '.assets[]? | select(.name == $name)' | head -1)
 
           if [ -z "$ASSET_JSON" ]; then
-            echo "❌ SDKファイルが見つかりません: $ASSET_NAME"
+            echo "Error: SDK file not found: $ASSET_NAME"
             exit 1
           fi
 
           API_DOWNLOAD_URL=$(echo "$ASSET_JSON" | jq -r '.url // empty')
           
-          # SDKをダウンロード
-          echo "⬇️  SDKをダウンロード中..."
+          echo "Downloading SDK..."
           curl -L \
                -H "Authorization: token $GITHUB_TOKEN" \
                -H "Accept: application/octet-stream" \
@@ -107,13 +101,13 @@ jobs:
             -s "$API_DOWNLOAD_URL"
           
           if [ ! -f "AE_SDK.zip" ] || [ ! -s "AE_SDK.zip" ]; then
-            echo "❌ ダウンロードに失敗しました"
+            echo "Error: Download failed"
             exit 1
           fi
           
-          echo "✅ ダウンロード完了 ($(du -h AE_SDK.zip | cut -f1))"
+          echo "SDK downloaded successfully ($(du -h AE_SDK.zip | cut -f1))"
 
-      - name: Download AE SDK from Private Repository (Windows)
+      - name: Download After Effects SDK (Windows)
         if: matrix.platform == 'win'
         env:
           GITHUB_TOKEN: ${{ secrets.AE_SDK_DOWNLOAD_TOKEN }}
@@ -122,14 +116,13 @@ jobs:
           $repo = "rebuildup/my-ae-sdk-storage"
           $releaseTags = @("sdk", "ae-sdk_25.6_61", "v25.6.61", "25.6.61")
           
-          Write-Host "📦 プライベートリポジトリからAeSDKをダウンロードします"
+          Write-Host "Downloading After Effects SDK from private repository..."
           
           if (-not $env:GITHUB_TOKEN) {
-            Write-Host "❌ GITHUB_TOKENが設定されていません"
+            Write-Host "Error: GITHUB_TOKEN not configured"
             exit 1
           }
           
-          # リリース情報を取得
           $releaseJson = $null
           foreach ($tag in $releaseTags) {
             try {
@@ -139,7 +132,7 @@ jobs:
               }
               
               $releaseJson = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/tags/$tag" -Headers $headers -ErrorAction Stop
-              Write-Host "✅ リリースを見つけました: $tag"
+              Write-Host "Found release: $tag"
               break
             } catch {
               continue
@@ -147,21 +140,19 @@ jobs:
           }
           
           if (-not $releaseJson) {
-            Write-Host "❌ リリース情報の取得に失敗しました"
+            Write-Host "Error: Failed to fetch release information"
               exit 1
           }
           
-          # アセット情報を取得
           $assetName = "${{ matrix.sdk_file }}"
           $asset = $releaseJson.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
           
           if (-not $asset) {
-            Write-Host "❌ SDKファイルが見つかりません: $assetName"
+            Write-Host "Error: SDK file not found: $assetName"
             exit 1
           }
           
-          # SDKをダウンロード
-          Write-Host "⬇️  SDKをダウンロード中..."
+          Write-Host "Downloading SDK..."
           $headers = @{
             "Authorization" = "token $env:GITHUB_TOKEN"
             "Accept" = "application/octet-stream"
@@ -170,213 +161,150 @@ jobs:
           Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "AE_SDK.zip"
           
           if (-not (Test-Path "AE_SDK.zip")) {
-            Write-Host "❌ ダウンロードに失敗しました"
+            Write-Host "Error: Download failed"
             exit 1
           }
           
-          Write-Host "✅ ダウンロード完了"
+          Write-Host "SDK downloaded successfully"
 
-      # ==================== SDKを展開してセットアップ (Mac) ====================
       - name: Extract and Setup SDK (Mac)
         if: matrix.platform == 'mac'
         run: |
-          # set -e を一時的に無効化してエラーハンドリングを改善
           set +e
           
-          echo "📦 SDKを展開してセットアップします"
+          echo "Extracting SDK..."
           
-          # 作業ディレクトリの作成
           mkdir -p ae_sdk_work
           cd ae_sdk_work
-          
-          # 外側のzipを展開
-          echo "📂 外側のzipを展開中..."
           unzip -q ../AE_SDK.zip
           
-          # 展開されたディレクトリに移動
           SDK_EXTRACT_DIR=$(find . -maxdepth 2 -type f -name "extractzstd.sh" -exec dirname {} \; | head -1)
           
           if [ -z "$SDK_EXTRACT_DIR" ]; then
-            echo "❌ extractzstd.shが見つかりません"
+            echo "Error: extractzstd.sh not found"
             find . -name "*.sh"
             exit 1
           fi
           
           cd "$SDK_EXTRACT_DIR"
-          echo "📁 作業ディレクトリ: $(pwd)"
-          ls -la
-          
-          # extractzstd.shの内容を確認
-          echo "📄 extractzstd.shの内容:"
-          cat extractzstd.sh
-          
-          # 実行権限を付与
-          echo "🔧 実行権限を付与..."
           chmod +x zstd extractzstd.sh
           
-          # extractzstd.shを実行（xattrエラーは無視）
-          echo "🔧 extractzstd.shを実行してSDKを展開します..."
-          
-          # extractzstd.shを実行し、出力をキャプチャ（標準出力のみ表示、エラーは無視）
-          set +e  # エラーで停止しない
+          echo "Running SDK extraction script..."
+          set +e
           ./extractzstd.sh 2>&1 | head -50
           EXTRACT_EXIT=$?
-          set -e  # エラーで停止を再有効化
+          set -e
           
           if [ $EXTRACT_EXIT -ne 0 ]; then
-            echo "⚠️ extractzstd.shがエラーコード $EXTRACT_EXIT で終了しました（続行します）"
+            echo "Warning: extractzstd.sh exited with code $EXTRACT_EXIT (continuing...)"
           fi
           
-          # SDKディレクトリが存在するか確認
-          echo "📁 SDK展開後のディレクトリを確認中..."
-          sleep 2  # ファイルシステムの同期を待つ
-          
-          ls -la | grep -i "aftereffects" || echo "  AfterEffectsSDKディレクトリが見えません"
+          sleep 2
           
           if [ -d "ae25.6_61.64bit.AfterEffectsSDK" ]; then
-            echo "✅ SDKは正常に展開されました"
-            ls -la ae25.6_61.64bit.AfterEffectsSDK | head -20
+            echo "SDK extracted successfully"
           else
-            echo "⚠️ SDKディレクトリが見つかりません。zstd展開を直接実行します..."
+            echo "SDK directory not found, attempting manual extraction..."
             
-            # zstdとtar.zstdファイルの存在確認
             if [ ! -f "zstd" ] || [ ! -f "ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip" ]; then
-              echo "❌ 必要なファイルが見つかりません"
-              echo "   zstd: $([ -f 'zstd' ] && echo '存在' || echo '不在')"
-              echo "   ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip: $([ -f 'ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip' ] && echo '存在' || echo '不在')"
+              echo "Error: Required files not found"
               ls -la
               exit 1
             fi
             
-            # zstd展開を直接実行
-            echo "🔧 zstd展開を実行中..."
+            echo "Running zstd extraction..."
             set +e
             ./zstd -cd ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip | tar xf - -C . 2>&1 | head -50
             ZSTD_EXIT=$?
             set -e
             
             if [ $ZSTD_EXIT -ne 0 ]; then
-              echo "❌ zstd展開に失敗しました (exit code: $ZSTD_EXIT)"
+              echo "Error: zstd extraction failed (exit code: $ZSTD_EXIT)"
               exit 1
             fi
             
-            # 再度確認
             sleep 2
             if [ -d "ae25.6_61.64bit.AfterEffectsSDK" ]; then
-              echo "✅ zstd展開が完了しました"
+              echo "SDK extraction completed"
             else
-              echo "❌ SDK展開に失敗しました"
+              echo "Error: SDK extraction failed"
               ls -la
               exit 1
             fi
           fi
           
-          echo "📁 展開後のディレクトリ構造を確認中..."
-          ls -la
-          
-          # SDK rootを見つける
-          # 注意: このSDKではHeaders/Util/Resourcesが ae*.AfterEffectsSDK/Examples の中にある
+          # Find SDK root (Headers/Util/Resources location)
           SDK_ROOT=""
           
-          # パターン1: ae*.AfterEffectsSDK/Examples を探す（このSDKの実際の構造）
-          shopt -s nullglob  # マッチしない場合は空の配列にする
+          shopt -s nullglob
           for dir in ae*.AfterEffectsSDK; do
             if [ -d "$dir/Examples/Headers" ] && [ -d "$dir/Examples/Util" ] && [ -d "$dir/Examples/Resources" ]; then
               SDK_ROOT=$(cd "$dir/Examples" && pwd)
-              echo "✅ SDK rootを発見 (パターン1 - Examples内): $SDK_ROOT"
+              echo "SDK root found (Examples): $SDK_ROOT"
               break
-            # 念のため、直下もチェック
             elif [ -d "$dir/Headers" ] && [ -d "$dir/Util" ] && [ -d "$dir/Resources" ]; then
               SDK_ROOT=$(cd "$dir" && pwd)
-              echo "✅ SDK rootを発見 (パターン1 - 直下): $SDK_ROOT"
+              echo "SDK root found (direct): $SDK_ROOT"
               break
             fi
           done
           shopt -u nullglob
           
-          # パターン2: Headers, Util, Resources を含む任意のディレクトリを深さ3まで探す
           if [ -z "$SDK_ROOT" ]; then
-            echo "🔍 Headersディレクトリを検索中..."
+            echo "Searching for Headers directory..."
             while IFS= read -r -d '' dir; do
               parent=$(dirname "$dir")
               if [ -d "$parent/Util" ] && [ -d "$parent/Resources" ]; then
                 SDK_ROOT=$(cd "$parent" && pwd)
-                echo "✅ SDK rootを発見 (パターン2): $SDK_ROOT"
-                echo "   親ディレクトリ: $(basename "$parent")"
+                echo "SDK root found: $SDK_ROOT"
                 break
               fi
             done < <(find . -maxdepth 3 -type d -name "Headers" -print0 2>/dev/null)
           fi
           
           if [ -z "$SDK_ROOT" ]; then
-            echo "❌ SDK root が見つかりません"
-            echo "📁 現在のディレクトリ: $(pwd)"
-            echo "📁 ディレクトリ一覧:"
+            echo "Error: SDK root not found"
             find . -maxdepth 3 -type d
             exit 1
           fi
           
-          echo "✅ SDK root: $SDK_ROOT"
+          echo "SDK root: $SDK_ROOT"
           
-          # SDK_ROOT が既に Examples の場合、Template ディレクトリを確保
-          if [ ! -d "$SDK_ROOT/Template" ]; then
-            echo "📁 Templateディレクトリを作成"
-            mkdir -p "$SDK_ROOT/Template"
-          else
-            echo "✅ Templateディレクトリは既に存在します"
-          fi
-          
-          # 環境変数を設定
+          mkdir -p "$SDK_ROOT/Template"
           echo "SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
-          
-          # 一時ファイルを削除
           rm -f ../../AE_SDK.zip 2>/dev/null || true
-          
-          # 最後に set -e を再有効化
           set -e
 
       - name: Extract and Setup SDK (Windows)
         if: matrix.platform == 'win'
         shell: pwsh
         run: |
-          Write-Host "📦 SDKを展開してセットアップします"
+          Write-Host "Extracting SDK..."
           
-          # 作業ディレクトリの作成
           New-Item -ItemType Directory -Path "ae_sdk_work" -Force | Out-Null
           Set-Location "ae_sdk_work"
-          
-          # 外側のzipを展開
-          Write-Host "📂 外側のzipを展開中..."
           Expand-Archive -Path "..\AE_SDK.zip" -DestinationPath "." -Force
           
-          # extractzstd.batを探す
           $extractScript = Get-ChildItem -Recurse -Filter "extractzstd.bat" | Select-Object -First 1
           
           if (-not $extractScript) {
-            Write-Host "❌ extractzstd.batが見つかりません"
+            Write-Host "Error: extractzstd.bat not found"
             Get-ChildItem -Recurse -Filter "*.bat"
             exit 1
           }
           
           Set-Location $extractScript.DirectoryName
-          Write-Host "📁 作業ディレクトリ: $(Get-Location)"
           
-          # extractzstd.batを実行
-          Write-Host "🔧 extractzstd.batを実行してSDKを展開します..."
+          Write-Host "Running SDK extraction script..."
           cmd /c extractzstd.bat
           
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "⚠️ extractzstd.batの実行で警告がありましたが続行します (exit code: $LASTEXITCODE)"
+            Write-Host "Warning: extractzstd.bat exited with code $LASTEXITCODE (continuing...)"
           }
           
-          Write-Host "📁 展開後のディレクトリ構造を確認中..."
-          Get-ChildItem -Directory | ForEach-Object { Write-Host "  - $($_.Name)" }
-          
-          # SDK rootを見つける
-          # 注意: このSDKではHeaders/Util/Resourcesが ae*.AfterEffectsSDK\Examples の中にある
+          # Find SDK root (Headers/Util/Resources location)
           $sdkRoot = $null
           
-          # パターン1: ae*.AfterEffectsSDK\Examples を探す（このSDKの実際の構造）
           $sdkDirs = Get-ChildItem -Directory -Filter "ae*.AfterEffectsSDK" -ErrorAction SilentlyContinue
           foreach ($dir in $sdkDirs) {
             $examplesPath = Join-Path $dir.FullName "Examples"
@@ -384,92 +312,69 @@ jobs:
                 (Test-Path "$examplesPath\Util") -and 
                 (Test-Path "$examplesPath\Resources")) {
               $sdkRoot = $examplesPath
-              Write-Host "✅ SDK rootを発見 (パターン1 - Examples内): $sdkRoot"
+              Write-Host "SDK root found (Examples): $sdkRoot"
               break
             }
-            # 念のため、直下もチェック
             elseif ((Test-Path "$($dir.FullName)\Headers") -and 
                     (Test-Path "$($dir.FullName)\Util") -and 
                     (Test-Path "$($dir.FullName)\Resources")) {
               $sdkRoot = $dir.FullName
-              Write-Host "✅ SDK rootを発見 (パターン1 - 直下): $sdkRoot"
+              Write-Host "SDK root found (direct): $sdkRoot"
               break
             }
           }
           
-          # パターン2: Headers, Util, Resources を含む任意のディレクトリを深さ3まで探す
           if (-not $sdkRoot) {
-            Write-Host "🔍 Headersディレクトリを検索中..."
+            Write-Host "Searching for Headers directory..."
             $headersDirs = Get-ChildItem -Directory -Recurse -Depth 3 -Filter "Headers" -ErrorAction SilentlyContinue
             foreach ($dir in $headersDirs) {
               $parent = $dir.Parent.FullName
               if ((Test-Path "$parent\Util") -and (Test-Path "$parent\Resources")) {
                 $sdkRoot = $parent
-                Write-Host "✅ SDK rootを発見 (パターン2): $sdkRoot"
-                Write-Host "   親ディレクトリ: $($dir.Parent.Name)"
+                Write-Host "SDK root found: $sdkRoot"
                 break
               }
             }
           }
           
           if (-not $sdkRoot) {
-            Write-Host "❌ SDK root が見つかりません"
-            Write-Host "📁 現在のディレクトリ: $(Get-Location)"
-            Write-Host "📁 ディレクトリ一覧:"
+            Write-Host "Error: SDK root not found"
             Get-ChildItem -Directory -Depth 2 | Select-Object FullName | Format-Table -AutoSize
             exit 1
           }
           
-          # SDK_ROOT が既に Examples の場合、Template ディレクトリを確保
-          if (-not (Test-Path "$sdkRoot\Template")) {
-            Write-Host "📁 Templateディレクトリを作成"
-            New-Item -ItemType Directory -Path "$sdkRoot\Template" -Force | Out-Null
-          } else {
-            Write-Host "✅ Templateディレクトリは既に存在します"
-          }
+          Write-Host "SDK root: $sdkRoot"
           
-          Write-Host "✅ SDK root: $sdkRoot"
+          New-Item -ItemType Directory -Path "$sdkRoot\Template" -Force | Out-Null
           Add-Content -Path $env:GITHUB_ENV -Value "SDK_ROOT=$sdkRoot"
-          
           Remove-Item "..\AE_SDK.zip" -Force -ErrorAction SilentlyContinue
 
-      # ==================== BuildAll.sln のビルド (Windows) ====================
-      - name: Build BuildAll.sln (Windows)
+      - name: Build SDK Dependencies (Windows)
         if: matrix.platform == 'win'
         shell: pwsh
         continue-on-error: true
         run: |
-          Write-Host "🔨 BuildAll.sln をビルドして依存関係を整えます"
-          Write-Host "⚠️ 注意: 管理者権限が必要な場合があるため、失敗しても続行します"
+          Write-Host "Building SDK dependencies (BuildAll.sln)..."
+          Write-Host "Note: This may fail without admin rights, but we will continue"
           
-          # AE_PLUGIN_BUILD_DIR 環境変数を設定（SDKのビルドシステムが要求）
           $pluginBuildDir = "${{ github.workspace }}\ae_plugin_output"
           New-Item -ItemType Directory -Path $pluginBuildDir -Force | Out-Null
           $env:AE_PLUGIN_BUILD_DIR = $pluginBuildDir
-          Write-Host "🔧 AE_PLUGIN_BUILD_DIR を設定: $pluginBuildDir"
           
-          # SDK_ROOT は Examples ディレクトリなので、親に移動
           $sdkParent = Split-Path $env:SDK_ROOT -Parent
-          Write-Host "📁 SDK親ディレクトリ: $sdkParent"
           Set-Location $sdkParent
           
-          # BuildAll.sln を探す（親ディレクトリまたはExamplesディレクトリ内）
           $buildSln = $null
-          $buildSlnPath = $null
           
           if (Test-Path "BuildAll.sln") {
             $buildSln = "BuildAll.sln"
-            $buildSlnPath = $sdkParent
-            Write-Host "✅ BuildAll.sln を発見: $buildSlnPath\$buildSln"
           } elseif (Test-Path "Examples\BuildAll.sln") {
             Set-Location Examples
             $buildSln = "BuildAll.sln"
-            $buildSlnPath = "$sdkParent\Examples"
-            Write-Host "✅ BuildAll.sln を発見: $buildSlnPath\$buildSln"
           }
           
           if ($buildSln) {
-            Write-Host "📦 $buildSln をビルド中..."
+            Write-Host "Building $buildSln..."
             
             try {
               msbuild $buildSln `
@@ -482,30 +387,26 @@ jobs:
                 /maxcpucount:1
               
               if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ BuildAll.sln のビルドが完了しました"
+                Write-Host "SDK dependencies built successfully"
               } else {
-                Write-Host "⚠️ BuildAll.sln のビルドに失敗しましたが続行します (exit code: $LASTEXITCODE)"
+                Write-Host "Warning: SDK dependencies build failed (continuing...)"
               }
             } catch {
-              Write-Host "⚠️ BuildAll.sln のビルド中に例外が発生しましたが続行します"
-              Write-Host "   Exception: $($_.Exception.Message)"
+              Write-Host "Warning: Exception during build (continuing...)"
+              Write-Host "Exception: $($_.Exception.Message)"
             }
           } else {
-            Write-Host "⚠️ BuildAll.sln が見つかりません（スキップ）"
-            Write-Host "   検索場所: $sdkParent"
+            Write-Host "BuildAll.sln not found (skipped)"
           }
 
-      # ==================== プラグインをSDK/Examples/Templateにコピー ====================
       - name: Copy plugin to SDK Template directory (Mac)
         if: matrix.platform == 'mac'
         run: |
-          echo "📋 プラグインをSDK Templateディレクトリにコピー"
+          echo "Copying plugin to SDK Template directory..."
           
-          # SDK_ROOT は既に Examples ディレクトリ
           PLUGIN_DIR="$SDK_ROOT/Template/sep_color"
           mkdir -p "$PLUGIN_DIR"
           
-          # 必要なファイルをコピー
           rsync -av \
             --exclude='.git' \
             --exclude='tmp' \
@@ -516,20 +417,18 @@ jobs:
             "${{ github.workspace }}/" \
             "$PLUGIN_DIR/"
           
-          echo "✅ プラグインをコピーしました: $PLUGIN_DIR"
+          echo "Plugin copied to: $PLUGIN_DIR"
           echo "PLUGIN_DIR=$PLUGIN_DIR" >> $GITHUB_ENV
 
       - name: Copy plugin to SDK Template directory (Windows)
         if: matrix.platform == 'win'
         shell: pwsh
         run: |
-          Write-Host "📋 プラグインをSDK Templateディレクトリにコピー"
+          Write-Host "Copying plugin to SDK Template directory..."
           
-          # SDK_ROOT は既に Examples ディレクトリ
           $pluginDir = "$env:SDK_ROOT\Template\sep_color"
           New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
           
-          # 除外するディレクトリ
           $excludeDirs = @('.git', 'tmp', 'ae_sdk_work', '.github', 'output')
           
           Get-ChildItem "${{ github.workspace }}" -Force | Where-Object {
@@ -538,58 +437,33 @@ jobs:
             Copy-Item -Path $_.FullName -Destination $pluginDir -Recurse -Force
           }
           
-          Write-Host "✅ プラグインをコピーしました: $pluginDir"
+          Write-Host "Plugin copied to: $pluginDir"
           Add-Content -Path $env:GITHUB_ENV -Value "PLUGIN_DIR=$pluginDir"
 
-      # ==================== プラグインのビルド ====================
       - name: Build Plugin (Mac)
         if: matrix.platform == 'mac'
         run: |
           set -e
           
-          echo "🔨 sep_color プラグインをビルド"
+          echo "Building plugin..."
           
-          # AE_PLUGIN_BUILD_DIR 環境変数を設定（SDKのビルドシステムが要求する場合がある）
           PLUGIN_BUILD_DIR="${{ github.workspace }}/ae_plugin_output"
           mkdir -p "$PLUGIN_BUILD_DIR"
           export AE_PLUGIN_BUILD_DIR="$PLUGIN_BUILD_DIR"
-          echo "🔧 AE_PLUGIN_BUILD_DIR を設定: $PLUGIN_BUILD_DIR"
           
           cd "$PLUGIN_DIR/Mac"
           
           if [ ! -f "sep_color.xcodeproj/project.pbxproj" ]; then
-            echo "❌ Xcodeプロジェクトが見つかりません"
+            echo "Error: Xcode project not found"
             ls -la
             exit 1
           fi
           
-          # ビルド構成を表示
-          echo "📋 ビルド構成:"
-          echo "   Configuration: Debug"
-          echo "   SDK: macosx"
-          echo "   Architectures: x86_64, arm64"
-          echo "   SDK Root: $SDK_ROOT"
+          echo "Build configuration:"
+          echo "  Configuration: Debug"
+          echo "  SDK: macosx"
+          echo "  Architectures: x86_64, arm64"
           
-          # SDK構造を確認
-          echo "📁 SDK構造を確認:"
-          if [ -d "$SDK_ROOT/Headers" ]; then
-            echo "  ✅ Headers フォルダ存在"
-          else
-            echo "  ❌ Headers フォルダなし"
-          fi
-          if [ -d "$SDK_ROOT/Util" ]; then
-            echo "  ✅ Util フォルダ存在"
-          else
-            echo "  ❌ Util フォルダなし"
-          fi
-          if [ -f "$SDK_ROOT/Resources/PiPLTool" ]; then
-            echo "  ✅ PiPLTool 存在"
-          else
-            echo "  ❌ PiPLTool なし"
-          fi
-          
-          # ビルド
-          echo "📦 プラグインをビルド中..."
           xcodebuild build \
             -project sep_color.xcodeproj \
             -target sep_color \
@@ -603,38 +477,29 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
           
-          echo "✅ ビルド成功"
+          echo "Build successful"
           
-          # ビルド成果物の確認（複数の場所を検索）
-          echo "📦 ビルド成果物を検索中..."
-          echo "   現在のディレクトリ: $(pwd)"
-          
-          # 複数の場所を検索
+          # Find build artifact
+          echo "Searching for build artifact..."
           PLUGIN_PATH=""
+          
           for search_path in "build/sep_color.plugin" "build/Debug/sep_color.plugin" "build/Release/sep_color.plugin"; do
             if [ -d "$search_path" ]; then
               PLUGIN_PATH="$search_path"
-              echo "✅ ビルド成果物を発見: $PLUGIN_PATH"
               break
             fi
           done
           
-          # 見つからない場合は再帰検索
           if [ -z "$PLUGIN_PATH" ]; then
-            echo "🔍 再帰的に検索中..."
             PLUGIN_PATH=$(find build -name "sep_color.plugin" -type d 2>/dev/null | head -1)
-            if [ -n "$PLUGIN_PATH" ]; then
-              echo "✅ ビルド成果物を発見: $PLUGIN_PATH"
-            fi
           fi
           
           if [ -n "$PLUGIN_PATH" ]; then
             mkdir -p "${{ github.workspace }}/artifacts"
             cp -R "$PLUGIN_PATH" "${{ github.workspace }}/artifacts/"
-            echo "✅ アーティファクトをコピーしました: artifacts/sep_color.plugin"
+            echo "Artifact copied: artifacts/sep_color.plugin"
           else
-            echo "❌ ビルド成果物が見つかりません"
-            echo "📁 ディレクトリ構造:"
+            echo "Error: Build artifact not found"
             find . -name "*.plugin" -o -name "*.o" | head -20
             exit 1
           fi
@@ -643,35 +508,27 @@ jobs:
         if: matrix.platform == 'win'
         shell: pwsh
         run: |
-          Write-Host "🔨 sep_color プラグインをビルド"
+          Write-Host "Building plugin..."
           
-          # AE_PLUGIN_BUILD_DIR 環境変数を設定（SDKのビルドシステムが要求）
           $pluginBuildDir = "${{ github.workspace }}\ae_plugin_output"
           New-Item -ItemType Directory -Path $pluginBuildDir -Force | Out-Null
           $env:AE_PLUGIN_BUILD_DIR = $pluginBuildDir
-          Write-Host "🔧 AE_PLUGIN_BUILD_DIR を設定: $pluginBuildDir"
           
           Set-Location "$env:PLUGIN_DIR\Win"
           
           if (-not (Test-Path "sep_color.sln")) {
-            Write-Host "❌ ソリューションファイルが見つかりません"
+            Write-Host "Error: Solution file not found"
             Get-ChildItem
             exit 1
           }
           
-          # 出力ディレクトリを確保
           $outputDir = Join-Path (Get-Location).Path "..\output"
           New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
-          Write-Host "📁 出力ディレクトリ: $outputDir"
           
-          # ビルド構成を表示
-          Write-Host "📋 ビルド構成:"
-          Write-Host "   Configuration: Debug"
-          Write-Host "   Platform: x64"
-          Write-Host "   SDK Root: $env:SDK_ROOT"
+          Write-Host "Build configuration:"
+          Write-Host "  Configuration: Debug"
+          Write-Host "  Platform: x64"
           
-          # ビルド
-          Write-Host "📦 プラグインをビルド中..."
           msbuild sep_color.sln `
             /p:Configuration=Debug `
             /p:Platform=x64 `
@@ -682,33 +539,20 @@ jobs:
           
           if ($LASTEXITCODE -ne 0) {
             Write-Host ""
-            Write-Host "❌ ビルドに失敗しました (exit code: $LASTEXITCODE)"
+            Write-Host "Error: Build failed (exit code: $LASTEXITCODE)"
             Write-Host ""
-            Write-Host "📁 ディレクトリ構造を確認:"
-            Write-Host "SDK Root: $env:SDK_ROOT"
-            if (Test-Path "$env:SDK_ROOT\Headers") {
-              Write-Host "  ✅ Headers フォルダ存在"
-            } else {
-              Write-Host "  ❌ Headers フォルダなし"
-            }
-            if (Test-Path "$env:SDK_ROOT\Util") {
-              Write-Host "  ✅ Util フォルダ存在"
-            } else {
-              Write-Host "  ❌ Util フォルダなし"
-            }
-            if (Test-Path "$env:SDK_ROOT\Resources\PiPLTool.exe") {
-              Write-Host "  ✅ PiPLTool.exe 存在"
-            } else {
-              Write-Host "  ❌ PiPLTool.exe なし"
-            }
+            Write-Host "Checking SDK structure:"
+            Write-Host "  SDK Root: $env:SDK_ROOT"
+            Write-Host "  Headers: $(Test-Path "$env:SDK_ROOT\Headers")"
+            Write-Host "  Util: $(Test-Path "$env:SDK_ROOT\Util")"
+            Write-Host "  PiPLTool: $(Test-Path "$env:SDK_ROOT\Resources\PiPLTool.exe")"
             exit 1
           }
           
-          Write-Host "✅ ビルド成功"
+          Write-Host "Build successful"
           
-          # ビルド成果物の確認（複数の場所を検索）
-          Write-Host "📦 ビルド成果物を検索中..."
-          Write-Host "   現在のディレクトリ: $(Get-Location)"
+          # Find build artifact
+          Write-Host "Searching for build artifact..."
           
           $searchPaths = @(
             "x64\Debug\sep_color.aex",
@@ -721,33 +565,25 @@ jobs:
           foreach ($path in $searchPaths) {
             if (Test-Path $path) {
               $aexPath = Get-Item $path
-              Write-Host "✅ ビルド成果物を発見: $($aexPath.FullName)"
               break
             }
           }
           
-          # 見つからない場合は再帰検索
           if (-not $aexPath) {
-            Write-Host "🔍 再帰的に検索中..."
             $aexPath = Get-ChildItem -Path . -Filter "sep_color.aex" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($aexPath) {
-              Write-Host "✅ ビルド成果物を発見: $($aexPath.FullName)"
-            }
           }
           
           if ($aexPath) {
             $artifactsDir = "${{ github.workspace }}\artifacts"
             New-Item -ItemType Directory -Path $artifactsDir -Force | Out-Null
             Copy-Item -Path $aexPath.FullName -Destination $artifactsDir -Force
-            Write-Host "✅ アーティファクトをコピーしました: $artifactsDir\sep_color.aex"
+            Write-Host "Artifact copied: $artifactsDir\sep_color.aex"
           } else {
-            Write-Host "❌ ビルド成果物が見つかりません"
-            Write-Host "📁 ディレクトリ構造:"
+            Write-Host "Error: Build artifact not found"
             Get-ChildItem -Recurse -Depth 3 | Where-Object { $_.Extension -eq ".aex" -or $_.Name -like "*.obj" } | Select-Object FullName | Format-Table -AutoSize
             exit 1
           }
 
-      # ==================== アーティファクトのアップロード ====================
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
