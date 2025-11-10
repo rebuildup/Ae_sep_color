@@ -591,7 +591,7 @@ jobs:
               LogError "Unable to fetch release metadata"
               LogError ("HTTP status: {0}" -f $_.Exception.Response.StatusCode.value__)
               LogError ("Message    : {0}" -f $_.Exception.Message)
-              LogBlank()
+              LogBlank
               Write-Output "Possible causes:"
               Write-Output "  1. Repository missing or private without access"
               Write-Output ("  2. Tags not found (checked: {0})" -f ($RELEASE_TAG_CANDIDATES -join ", "))
