@@ -526,12 +526,16 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          
+          function LogInfo([string]$Message) { Write-Output ("[INFO] {0}" -f $Message) }
+          function LogWarn([string]$Message) { Write-Output ("[WARN] {0}" -f $Message) }
+          function LogError([string]$Message) { Write-Output ("[ERROR] {0}" -f $Message) }
+          function LogBlank() { Write-Output "" }
+
           $EXPECTED_SDK_PATH = "${{ steps.project_path.outputs.expected_sdk_path }}"
-          
+
           # AeSDKが既に存在するか確認
           if ((Test-Path "$EXPECTED_SDK_PATH\Headers") -and (Test-Path "$EXPECTED_SDK_PATH\Util")) {
-            Write-Output "✅ AeSDKが既に存在します: $EXPECTED_SDK_PATH"
+            LogInfo "AeSDK already exists: $EXPECTED_SDK_PATH"
             exit 0
           }
           
@@ -540,14 +544,14 @@ jobs:
           $RELEASE_TAG_CANDIDATES = @("sdk", "ae-sdk_25.6_61", "v25.6.61", "25.6.61")
           $REPO = "rebuildup/my-ae-sdk-storage"
           
-          Write-Output "📦 GitHubリリースからAeSDKをダウンロードします"
-          Write-Output "   リポジトリ: $REPO"
-          Write-Output "   SDKファイル: ${{ matrix.sdk_file }}"
+          LogInfo "Download AeSDK from GitHub releases"
+          Write-Output "   Repository: $REPO"
+          Write-Output "   SDK file : ${{ matrix.sdk_file }}"
           
           # トークンの確認
           if (-not $env:GITHUB_TOKEN) {
-            Write-Output "❌ GITHUB_TOKENが設定されていません"
-            Write-Output "   GitHub Secretsに AE_SDK_DOWNLOAD_TOKEN を設定してください"
+            LogError "GITHUB_TOKEN is not defined"
+            Write-Output "   Please configure AE_SDK_DOWNLOAD_TOKEN in GitHub Secrets"
             exit 1
           }
           
@@ -561,53 +565,50 @@ jobs:
           $foundTag = $null
           
           foreach ($RELEASE_TAG in $RELEASE_TAG_CANDIDATES) {
-            Write-Output "🔍 リリース情報を取得中... (タグ: $RELEASE_TAG)"
+            LogInfo "Requesting release metadata (tag: $RELEASE_TAG)"
             $releaseUrl = "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"
-            
+
             try {
               $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -ErrorAction Stop
               $foundTag = $RELEASE_TAG
-              Write-Output "✅ リリースを見つけました: $foundTag"
+              LogInfo "Release found: $foundTag"
               break
             } catch {
               $statusCode = $_.Exception.Response.StatusCode.value__
-              Write-Output "⚠️  タグ '$RELEASE_TAG' が見つかりませんでした (HTTP $statusCode)"
+              LogWarn ("Tag '{0}' not found (HTTP {1})" -f $RELEASE_TAG, $statusCode)
             }
           }
-          
-          # どのタグも見つからない場合、最新リリースを試す
+
           if (-not $releaseJson) {
-            Write-Output "⚠️  指定されたタグが見つかりません。最新リリースを取得します..."
+            LogWarn "Falling back to latest release"
             $releaseUrl = "https://api.github.com/repos/$REPO/releases/latest"
-            
+
             try {
               $releaseJson = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -ErrorAction Stop
               $foundTag = $releaseJson.tag_name
-              Write-Output "✅ 最新リリースを見つけました: $foundTag"
+              LogInfo "Latest release located: $foundTag"
             } catch {
-              Write-Output "❌ リリース情報の取得に失敗しました"
-              Write-Output "HTTPステータス: $($_.Exception.Response.StatusCode.value__)"
-              Write-Output "エラーメッセージ: $($_.Exception.Message)"
-              Write-Output ""
-              Write-Output "考えられる原因:"
-              Write-Output "  1. リポジトリが存在しない、またはプライベートリポジトリでアクセス権限がない"
-              Write-Output "  2. リリースタグが存在しない（試したタグ: $($RELEASE_TAG_CANDIDATES -join ', ')）"
-              Write-Output "  3. GitHub Personal Access Token (PAT) の権限が不足している"
-              Write-Output "  4. AE_SDK_DOWNLOAD_TOKEN が正しく設定されていない"
+              LogError "Unable to fetch release metadata"
+              LogError ("HTTP status: {0}" -f $_.Exception.Response.StatusCode.value__)
+              LogError ("Message    : {0}" -f $_.Exception.Message)
+              LogBlank()
+              Write-Output "Possible causes:"
+              Write-Output "  1. Repository missing or private without access"
+              Write-Output ("  2. Tags not found (checked: {0})" -f ($RELEASE_TAG_CANDIDATES -join ", "))
+              Write-Output "  3. GitHub token lacks required scopes"
+              Write-Output "  4. AE_SDK_DOWNLOAD_TOKEN is not configured"
               exit 1
             }
           }
-          
-          # アセットの一覧を表示（デバッグ用）
-          Write-Output "📋 利用可能なアセット:"
+
           $releaseJson.assets | ForEach-Object { Write-Output "   - $($_.name)" }
           
           # アセットのダウンロードURLを取得
           $asset = $releaseJson.assets | Where-Object { $_.name -eq "${{ matrix.sdk_file }}" } | Select-Object -First 1
 
           if (-not $asset) {
-            Write-Output "❌ SDKファイルが見つかりません: ${{ matrix.sdk_file }}"
-            Write-Output "利用可能なアセットの一覧:"
+            LogError ("SDK asset not found: {0}" -f "${{ matrix.sdk_file }}")
+            Write-Output "Available assets:"
             $releaseJson.assets | ForEach-Object { Write-Output "   - $($_.name)" }
             exit 1
           }
@@ -616,16 +617,17 @@ jobs:
           $browserDownloadUrl = $asset.browser_download_url
 
           if (-not $apiDownloadUrl) {
-            Write-Output "❌ APIダウンロードURLが取得できません"
+            LogError "Asset is missing an API download URL"
             Write-Output ($asset | ConvertTo-Json -Depth 5)
             exit 1
           }
 
-          Write-Output "📥 ダウンロードURL(API): $apiDownloadUrl"
-          if ($browserDownloadUrl) { Write-Output "📥 ダウンロードURL(ブラウザ): $browserDownloadUrl" }
+          LogInfo ("Download URL (API): {0}" -f $apiDownloadUrl)
+          if ($browserDownloadUrl) {
+            LogInfo ("Download URL (browser): {0}" -f $browserDownloadUrl)
+          }
 
-          # SDKをダウンロード (API経由)
-          Write-Output "⬇️  SDKをダウンロード中..."
+          LogInfo "Downloading SDK archive..."
           $outputPath = "AE_SDK.zip"
           $downloadHeaders = @{
             Authorization = "token $env:GITHUB_TOKEN"
@@ -636,15 +638,15 @@ jobs:
           try {
             Invoke-WebRequest -Uri $apiDownloadUrl -Headers $downloadHeaders -OutFile $outputPath -ErrorAction Stop
           } catch {
-            Write-Output "⚠️  API経由のダウンロードに失敗しました: $($_.Exception.Message)"
+            LogWarn ("API download failed: {0}" -f $_.Exception.Message)
             if ($browserDownloadUrl) {
-              Write-Output "試行: ブラウザURLを使用 (認証なし)"
+              LogInfo "Retrying with browser download URL (unauthenticated)"
               try {
                 Invoke-WebRequest -Uri $browserDownloadUrl -OutFile $outputPath -ErrorAction Stop
               } catch {
-                Write-Output "❌ SDKのダウンロードに失敗しました"
-                Write-Output "HTTPステータス: $($_.Exception.Response.StatusCode.value__)"
-                Write-Output "エラーメッセージ: $($_.Exception.Message)"
+                LogError "SDK download failed"
+                LogError ("HTTP status: {0}" -f $_.Exception.Response.StatusCode.value__)
+                LogError ("Message    : {0}" -f $_.Exception.Message)
                 exit 1
               }
             } else {
@@ -652,23 +654,22 @@ jobs:
             }
           }
           
-          # ダウンロードしたファイルの確認
           if (-not (Test-Path $outputPath) -or (Get-Item $outputPath).Length -eq 0) {
-            Write-Output "❌ ダウンロードしたファイルが無効です"
+            LogError "Downloaded file is missing or empty"
             exit 1
           }
-          
+
           $fileSize = (Get-Item $outputPath).Length / 1MB
-          Write-Output "✅ ダウンロード完了 ($([math]::Round($fileSize, 2)) MB)"
-          
-          Write-Output "📦 SDKを展開中..."
+          LogInfo ("Download complete ({0} MB)" -f [math]::Round($fileSize, 2))
+
+          LogInfo "Extracting SDK archive..."
           $extractDir = Join-Path $env:RUNNER_TEMP ("ae_sdk_" + [Guid]::NewGuid().ToString())
           New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
 
           try {
             Expand-Archive -Path $outputPath -DestinationPath $extractDir -Force -ErrorAction Stop
           } catch {
-            Write-Output "❌ SDKの展開に失敗しました: $($_.Exception.Message)"
+            LogError ("Failed to extract SDK archive: {0}" -f $_.Exception.Message)
             Get-ChildItem $extractDir -Recurse | Select-Object -First 40 | Format-Table FullName, LastWriteTime
             exit 1
           }
@@ -725,7 +726,7 @@ jobs:
               return $true
             }
 
-            Write-Output "⚠️  未対応のアーカイブ形式です: $Archive"
+            LogWarn ("Unsupported archive format: {0}" -f $Archive)
             return $false
           }
 
@@ -780,7 +781,7 @@ jobs:
               Sort-Object FullName
 
             foreach ($script in $scripts) {
-              Write-Output ("▶ SDK準備スクリプトを実行: {0}" -f $script.FullName)
+              LogInfo ("Running vendor script: {0}" -f $script.FullName)
               Push-Location -LiteralPath $script.DirectoryName
               try {
                 & cmd.exe /c "`"$($script.FullName)`""
@@ -789,7 +790,7 @@ jobs:
               }
 
               if ($LASTEXITCODE -ne 0) {
-                Write-Output ("⚠️  スクリプトが終了コード {0} を返しました" -f $LASTEXITCODE)
+                LogWarn ("Script exited with code {0}" -f $LASTEXITCODE)
               }
 
               $result = Get-SdkSourceDirs -root $root
@@ -805,14 +806,14 @@ jobs:
               Select-Object -First 1
 
             if ($solution) {
-              Write-Output ("🔨 BuildAll をビルドします: {0}" -f $solution.FullName)
+              LogInfo ("Building vendor solution: {0}" -f $solution.FullName)
               & msbuild $solution.FullName `
                 /m `
                 /p:Configuration=Release `
                 /p:Platform=x64 `
                 /v:minimal
             } else {
-              Write-Output "⚠️ BuildAll.sln が見つかりませんでした (スキップ)"
+              LogWarn "BuildAll.sln not found; skipping vendor compilation"
             }
           }
 
@@ -822,7 +823,7 @@ jobs:
           }
 
           if (-not $sources) {
-            Write-Output "❌ SDK内に Headers/Util が見つかりません"
+            LogError "Headers/Util directories not found inside SDK archive"
             Get-ChildItem $extractDir -Recurse -Directory | Select-Object -First 40 | Format-Table FullName
             exit 1
           }
@@ -839,7 +840,7 @@ jobs:
             if (Test-Path $targetTemplate) {
               Remove-Item -Recurse -Force $targetTemplate -ErrorAction SilentlyContinue
             }
-            Write-Output ("📁 テンプレートをSDKに配置: {0}" -f $targetTemplate)
+            LogInfo ("Copying project into SDK template: {0}" -f $targetTemplate)
             Copy-Item -Recurse -Force $projectDir $targetTemplate
           }
 
@@ -852,31 +853,29 @@ jobs:
           if ((Test-Path "$EXPECTED_SDK_PATH\Headers") -and (Test-Path "$EXPECTED_SDK_PATH\Util")) {
             $headerCount = (Get-ChildItem "$EXPECTED_SDK_PATH\Headers" -File | Measure-Object).Count
             $utilCount = (Get-ChildItem "$EXPECTED_SDK_PATH\Util" -File | Measure-Object).Count
-            Write-Output "✅ AeSDKのセットアップが完了しました"
-            Write-Output "📁 AeSDKパス: $EXPECTED_SDK_PATH"
-            Write-Output "📁 Headers: $EXPECTED_SDK_PATH\Headers ($headerCount ファイル)"
-            Write-Output "📁 Util: $EXPECTED_SDK_PATH\Util ($utilCount ファイル)"
+            LogInfo "AeSDK setup complete"
+            LogInfo ("Headers: {0}\Headers ({1} files)" -f $EXPECTED_SDK_PATH, $headerCount)
+            LogInfo ("Util    : {0}\Util ({1} files)" -f $EXPECTED_SDK_PATH, $utilCount)
           } else {
-            Write-Output "❌ AeSDKのセットアップに失敗しました"
-            Write-Output "想定パス: $EXPECTED_SDK_PATH"
-            Write-Output "存在確認:"
+            LogError "AeSDK setup failed"
+            Write-Output ("Expected path: {0}" -f $EXPECTED_SDK_PATH)
+            Write-Output "Presence check:"
             if (Test-Path "$EXPECTED_SDK_PATH") {
-              Write-Output "  - ディレクトリは存在します"
+              Write-Output "  - Root directory exists"
             } else {
-              Write-Output "  - ディレクトリが存在しません"
+              Write-Output "  - Root directory is missing"
             }
             if (Test-Path "$EXPECTED_SDK_PATH\Headers") {
-              Write-Output "  - Headers\ は存在します"
+              Write-Output "  - Headers\ exists"
             } else {
-              Write-Output "  - Headers\ が存在しません"
+              Write-Output "  - Headers\ is missing"
             }
             if (Test-Path "$EXPECTED_SDK_PATH\Util") {
-              Write-Output "  - Util\ は存在します"
+              Write-Output "  - Util\ exists"
             } else {
-              Write-Output "  - Util\ が存在しません"
+              Write-Output "  - Util\ is missing"
             }
-            Write-Output ""
-            Write-Output "展開されたファイル:"
+            Write-Output "Expanded directories:"
             $parentDir = Split-Path -Parent $EXPECTED_SDK_PATH
             Get-ChildItem $parentDir | Select-Object -First 20 | Format-Table Name, Length, LastWriteTime
             exit 1
