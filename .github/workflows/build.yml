@@ -339,40 +339,53 @@ jobs:
             exit 1
           fi
 
-          find_sdk_root() {
-            find "$EXTRACT_DIR" -type d | while IFS= read -r dir; do
-              if [ "$dir" = "$EXTRACT_DIR" ]; then
-                continue
+          HEADERS_SRC=""
+          UTIL_SRC=""
+
+          locate_sources_in_dir() {
+            local search_root="$1"
+            while IFS= read -r headers_path; do
+              local parent
+              parent="$(dirname "$headers_path")"
+              if [ -d "$parent/Util" ]; then
+                HEADERS_SRC="$headers_path"
+                UTIL_SRC="$parent/Util"
+                return 0
               fi
-              if [ -d "$dir/Headers" ] && [ -d "$dir/Util" ]; then
-                echo "$dir"
-                break
-              fi
-            done
+            done < <(find "$search_root" -type d -name "Headers" 2>/dev/null)
+            return 1
           }
 
-          SDK_ROOT=$(find_sdk_root)
+          locate_sources_in_dir "$EXTRACT_DIR" || true
 
-          find_source_dir() {
-            local pattern=$1
-            find "$EXTRACT_DIR" -type d -path "$pattern" -print -quit
-          }
-
-          if [ -n "$SDK_ROOT" ]; then
-            HEADERS_SRC="$SDK_ROOT/Headers"
-            UTIL_SRC="$SDK_ROOT/Util"
-          else
-            HEADERS_SRC=$(find_source_dir "*/AfterEffectsSDK*/Headers")
-            UTIL_SRC=$(find_source_dir "*/AfterEffectsSDK*/Util")
+          if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
+            DMG_FILE=$(find "$EXTRACT_DIR" -type f -name "*.dmg" | head -1)
+            if [ -n "$DMG_FILE" ]; then
+              echo "💿 DMGをマウントします: $DMG_FILE"
+              MOUNT_POINT=$(mktemp -d)
+              if hdiutil attach "$DMG_FILE" -mountpoint "$MOUNT_POINT" -quiet; then
+                locate_sources_in_dir "$MOUNT_POINT" || true
+                hdiutil detach "$MOUNT_POINT" -quiet || true
+              else
+                echo "⚠️  DMGのマウントに失敗しました: $DMG_FILE"
+              fi
+            fi
           fi
 
-          # フォールバック: 最初に見つかったHeaders/Util
-          [ -z "$HEADERS_SRC" ] && HEADERS_SRC=$(find "$EXTRACT_DIR" -type d -name "Headers" -print -quit)
-          [ -z "$UTIL_SRC" ] && UTIL_SRC=$(find "$EXTRACT_DIR" -type d -name "Util" -print -quit)
+          if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
+            while IFS= read -r nested_zip; do
+              echo "🗂️  ネストされたZIPを展開します: $nested_zip"
+              DEST_DIR="$EXTRACT_DIR/nested_$(basename "${nested_zip%.*}")"
+              mkdir -p "$DEST_DIR"
+              if unzip -q "$nested_zip" -d "$DEST_DIR"; then
+                locate_sources_in_dir "$DEST_DIR" && break
+              fi
+            done < <(find "$EXTRACT_DIR" -type f -name "*.zip" 2>/dev/null)
+          fi
 
           if [ -z "$HEADERS_SRC" ] || [ -z "$UTIL_SRC" ]; then
             echo "❌ SDK内に Headers/Util が見つかりません"
-            find "$EXTRACT_DIR" -maxdepth 3 -type d | head -40
+            find "$EXTRACT_DIR" -type d | head -40
             exit 1
           fi
 
@@ -547,7 +560,6 @@ jobs:
           $fileSize = (Get-Item $outputPath).Length / 1MB
           Write-Output "✅ ダウンロード完了 ($([math]::Round($fileSize, 2)) MB)"
           
-          # SDKを展開（テンポラリディレクトリへ）
           Write-Output "📦 SDKを展開中..."
           $extractDir = Join-Path $env:RUNNER_TEMP ("ae_sdk_" + [Guid]::NewGuid().ToString())
           New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
@@ -560,62 +572,98 @@ jobs:
             exit 1
           }
 
-          function Get-SdkRoot([string]$root) {
-            Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue |
-              Where-Object {
-                Test-Path (Join-Path $_.FullName "Headers") -and
-                Test-Path (Join-Path $_.FullName "Util")
-              } |
-              Select-Object -First 1
-          }
+          function Get-SdkSourceDirs {
+            param([string]$root)
+            $headersDirs = Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -ieq "Headers" }
 
-          $sdkRoot = Get-SdkRoot -root $extractDir
-
-          function Get-SdkSubDir([string]$pattern) {
-            $match = Get-ChildItem -Path $extractDir -Directory -Recurse -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -like $pattern } |
-              Select-Object -First 1
-            if ($match) {
-              return $match.FullName
+            foreach ($hdr in $headersDirs) {
+              $utilPath = Join-Path $hdr.Parent.FullName "Util"
+              if (Test-Path $utilPath) {
+                return [pscustomobject]@{
+                  Headers = $hdr.FullName
+                  Util    = $utilPath
+                  Root    = $hdr.Parent.FullName
+                }
+              }
             }
             return $null
           }
 
-          if ($sdkRoot) {
-            $headersSrc = Join-Path $sdkRoot.FullName "Headers"
-            $utilSrc    = Join-Path $sdkRoot.FullName "Util"
-          } else {
-            $headersSrc = Get-SdkSubDir "*AfterEffectsSDK*\\Headers"
-            $utilSrc    = Get-SdkSubDir "*AfterEffectsSDK*\\Util"
+          function Invoke-SdkPrepScripts {
+            param([string]$root)
+            $scripts = Get-ChildItem -Path $root -Filter "*.bat" -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match '(setup|install|extract|expand|prepare)' } |
+              Sort-Object FullName
+
+            foreach ($script in $scripts) {
+              Write-Output ("▶ SDK準備スクリプトを実行: {0}" -f $script.FullName)
+              & cmd.exe /c "`"$($script.FullName)`""
+              if ($LASTEXITCODE -ne 0) {
+                Write-Output ("⚠️  スクリプトが終了コード {0} を返しました" -f $LASTEXITCODE)
+              }
+              $result = Get-SdkSourceDirs -root $root
+              if ($result) { return $result }
+            }
+
+            return $null
           }
 
-          if (-not $headersSrc) {
-            $headersSrc = Get-ChildItem -Path $extractDir -Directory -Recurse -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -ieq "Headers" } |
-              Select-Object -First 1 |
-              ForEach-Object { $_.FullName }
+          function Invoke-BuildAll {
+            param([string]$root)
+            $solution = Get-ChildItem -Path $root -Recurse -Filter "BuildAll.sln" -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+
+            if ($solution) {
+              Write-Output ("🔨 BuildAll をビルドします: {0}" -f $solution.FullName)
+              & msbuild $solution.FullName `
+                /m `
+                /p:Configuration=Release `
+                /p:Platform=x64 `
+                /v:minimal
+            } else {
+              Write-Output "⚠️ BuildAll.sln が見つかりませんでした (スキップ)"
+            }
           }
 
-          if (-not $utilSrc) {
-            $utilSrc = Get-ChildItem -Path $extractDir -Directory -Recurse -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -ieq "Util" } |
-              Select-Object -First 1 |
-              ForEach-Object { $_.FullName }
+          $sdkRootDir = Get-ChildItem -Path $extractDir -Directory -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "AfterEffectsSDK*" } |
+            Select-Object -First 1
+          if (-not $sdkRootDir) {
+            $sdkRootDir = Get-Item $extractDir
           }
 
-          if (-not $headersSrc -or -not $utilSrc) {
+          $sources = Get-SdkSourceDirs -root $sdkRootDir.FullName
+          if (-not $sources) {
+            $sources = Invoke-SdkPrepScripts -root $sdkRootDir.FullName
+          }
+
+          if (-not $sources) {
             Write-Output "❌ SDK内に Headers/Util が見つかりません"
-            Get-ChildItem $extractDir -Recurse -Directory | Select-Object -First 40 | Format-Table FullName
+            Get-ChildItem $sdkRootDir.FullName -Recurse -Directory | Select-Object -First 40 | Format-Table FullName
             exit 1
+          }
+
+          Invoke-BuildAll -root $sdkRootDir.FullName
+
+          $projectDir = "${{ steps.project_path.outputs.project_dir }}"
+          if ($projectDir -and (Test-Path $projectDir)) {
+            $sdkTemplateRoot = Join-Path $sdkRootDir.FullName "Template"
+            New-Item -ItemType Directory -Force -Path $sdkTemplateRoot | Out-Null
+            $targetTemplate = Join-Path $sdkTemplateRoot (Split-Path $projectDir -Leaf)
+            if (Test-Path $targetTemplate) {
+              Remove-Item -Recurse -Force $targetTemplate -ErrorAction SilentlyContinue
+            }
+            Write-Output ("📁 テンプレートをSDKに配置: {0}" -f $targetTemplate)
+            Copy-Item -Recurse -Force $projectDir $targetTemplate
           }
 
           New-Item -ItemType Directory -Force -Path $EXPECTED_SDK_PATH | Out-Null
           Remove-Item -Recurse -Force (Join-Path $EXPECTED_SDK_PATH "Headers") -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force (Join-Path $EXPECTED_SDK_PATH "Util") -ErrorAction SilentlyContinue
-          Copy-Item -Recurse -Force $headersSrc (Join-Path $EXPECTED_SDK_PATH "Headers")
-          Copy-Item -Recurse -Force $utilSrc (Join-Path $EXPECTED_SDK_PATH "Util")
-          
-          # 最終確認
+          Copy-Item -Recurse -Force $sources.Headers (Join-Path $EXPECTED_SDK_PATH "Headers")
+          Copy-Item -Recurse -Force $sources.Util (Join-Path $EXPECTED_SDK_PATH "Util")
+
           if ((Test-Path "$EXPECTED_SDK_PATH\Headers") -and (Test-Path "$EXPECTED_SDK_PATH\Util")) {
             $headerCount = (Get-ChildItem "$EXPECTED_SDK_PATH\Headers" -File | Measure-Object).Count
             $utilCount = (Get-ChildItem "$EXPECTED_SDK_PATH\Util" -File | Measure-Object).Count
@@ -637,7 +685,6 @@ jobs:
             exit 1
           }
 
-          # クリーンアップ
           Remove-Item $outputPath -Force -ErrorAction SilentlyContinue
           Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
 
