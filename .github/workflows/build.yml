@@ -216,29 +216,43 @@ jobs:
           
           # extractzstd.shを実行（xattrエラーは無視）
           echo "🔧 extractzstd.shを実行してSDKを展開します..."
-          if ./extractzstd.sh 2>&1; then
-            echo "✅ extractzstd.shが正常に完了しました"
-          else
+          
+          # extractzstd.shを実行し、出力をキャプチャ
+          ./extractzstd.sh 2>&1 || {
             EXIT_CODE=$?
             echo "⚠️ extractzstd.shがエラーコード $EXIT_CODE で終了しました"
+          }
+          
+          # SDKディレクトリが存在するか確認
+          echo "📁 SDK展開後のディレクトリを確認中..."
+          if [ -d "ae25.6_61.64bit.AfterEffectsSDK" ]; then
+            echo "✅ SDKは正常に展開されました"
+          else
+            echo "⚠️ SDKディレクトリが見つかりません。zstd展開を直接実行します..."
             
-            # xattrのエラーの可能性があるため、zstd展開だけ再試行
-            if [ ! -d "ae25.6_61.64bit.AfterEffectsSDK" ]; then
-              echo "🔧 SDKが展開されていないため、zstd展開を直接実行..."
-              if [ -f "zstd" ] && [ -f "ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip" ]; then
-                ./zstd -cd ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip | tar xf - -C .
-                if [ $? -eq 0 ]; then
-                  echo "✅ zstd展開が完了しました"
-                else
-                  echo "❌ zstd展開に失敗しました"
-                  exit 1
-                fi
-              else
-                echo "❌ 必要なファイルが見つかりません"
-                exit 1
-              fi
+            # zstdとtar.zstdファイルの存在確認
+            if [ ! -f "zstd" ] || [ ! -f "ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip" ]; then
+              echo "❌ 必要なファイルが見つかりません"
+              echo "   zstd: $([ -f 'zstd' ] && echo '存在' || echo '不在')"
+              echo "   ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip: $([ -f 'ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip' ] && echo '存在' || echo '不在')"
+              ls -la
+              exit 1
+            fi
+            
+            # zstd展開を直接実行
+            echo "🔧 zstd展開を実行中..."
+            ./zstd -cd ae25.6_61.64bit.AfterEffectsSDK.tar.zstd.zip | tar xf - -C . 2>&1 || {
+              echo "❌ zstd展開に失敗しました (exit code: $?)"
+              exit 1
+            }
+            
+            # 再度確認
+            if [ -d "ae25.6_61.64bit.AfterEffectsSDK" ]; then
+              echo "✅ zstd展開が完了しました"
             else
-              echo "✅ SDKは既に展開されています（xattrエラーは無視）"
+              echo "❌ SDK展開に失敗しました"
+              ls -la
+              exit 1
             fi
           fi
           
