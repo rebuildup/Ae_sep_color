@@ -21,38 +21,28 @@ struct GPUContext
 	GPUContext()
 	{
 		gpu_available = false;
-		// GPUターゲットを検出
-		std::vector<Target::Feature> features;
 
+		try
+		{
 #ifdef _WIN32
-		// Windows: CUDA, OpenCL, D3D12をサポート
-		if (get_cuda_device_count() > 0)
-		{
-			gpu_target = get_host_target().with_feature(Target::CUDA);
-			gpu_available = true;
-		}
-		else if (get_opencl_device_count() > 0)
-		{
+			// Windows: OpenCLを優先（互換性が高い）
 			gpu_target = get_host_target().with_feature(Target::OpenCL);
 			gpu_available = true;
-		}
 #elif __APPLE__
-		// macOS: Metalをサポート
-		gpu_target = get_host_target().with_feature(Target::Metal);
-		gpu_available = true;
-#else
-		// Linux: OpenCL, CUDAをサポート
-		if (get_cuda_device_count() > 0)
-		{
-			gpu_target = get_host_target().with_feature(Target::CUDA);
+			// macOS: Metalをサポート
+			gpu_target = get_host_target().with_feature(Target::Metal);
 			gpu_available = true;
-		}
-		else if (get_opencl_device_count() > 0)
-		{
+#else
+			// Linux: OpenCLをサポート
 			gpu_target = get_host_target().with_feature(Target::OpenCL);
 			gpu_available = true;
-		}
 #endif
+		}
+		catch (...)
+		{
+			// GPU初期化失敗時はCPUフォールバック
+			gpu_available = false;
+		}
 	}
 };
 
@@ -101,9 +91,19 @@ static void HalideProcessLine(
 	uint8_t color_b,
 	bool aa_enabled)
 {
-	// 入力バッファの作成 (interleaved RGBA)
+	// 入力バッファの作成 (interleaved RGBA with stride)
+	int input_row_stride = input_stride / 4; // 4 = sizeof(PF_Pixel) = RGBA
+	int output_row_stride = output_stride / 4;
+
 	Buffer<uint8_t> input(const_cast<uint8_t *>(input_data), {width, height, 4}, "input");
+	input.set_stride(0, 4);					   // x方向（4チャンネル分）
+	input.set_stride(1, input_row_stride * 4); // y方向（row stride）
+	input.set_stride(2, 1);					   // チャンネル方向
+
 	Buffer<uint8_t> output(output_data, {width, height, 4}, "output");
+	output.set_stride(0, 4);					 // x方向
+	output.set_stride(1, output_row_stride * 4); // y方向
+	output.set_stride(2, 1);					 // チャンネル方向
 
 	// Halide変数定義
 	Var x("x"), y("y"), c("c");
@@ -182,19 +182,20 @@ static void HalideProcessLine(
 		Var xi("xi"), yi("yi");
 		process.gpu_tile(x, y, xi, yi, 32, 8);
 
-		// 入力キャッシュをGPUシェアードメモリに配置
-		input_cached.compute_at(process, x).gpu_threads(x, y);
+		// 中間バッファを事前計算（安全性重視）
+		input_cached.compute_root();
+		input_vec.compute_root();
 
 		process.realize(output, g_gpu_context->gpu_target);
 	}
 	else
 	{
 		// CPU実行（SIMD最適化とマルチスレッド）
-		Var yo("yo"), yi("yi");
-		process.split(y, yo, yi, 8).parallel(yo).vectorize(x, 16);
+		process.parallel(y).vectorize(x, 8);
 
-		// 入力キャッシュをタイル単位で計算
-		input_cached.compute_at(process, yi).vectorize(x, 16);
+		// 中間バッファを事前計算
+		input_cached.compute_root();
+		input_vec.compute_root();
 
 		process.realize(output);
 	}
@@ -218,9 +219,19 @@ static void HalideProcessCircle(
 	uint8_t color_b,
 	bool aa_enabled)
 {
-	// 入力バッファの作成 (interleaved RGBA)
+	// 入力バッファの作成 (interleaved RGBA with stride)
+	int input_row_stride = input_stride / 4; // 4 = sizeof(PF_Pixel) = RGBA
+	int output_row_stride = output_stride / 4;
+
 	Buffer<uint8_t> input(const_cast<uint8_t *>(input_data), {width, height, 4}, "input");
+	input.set_stride(0, 4);					   // x方向（4チャンネル分）
+	input.set_stride(1, input_row_stride * 4); // y方向（row stride）
+	input.set_stride(2, 1);					   // チャンネル方向
+
 	Buffer<uint8_t> output(output_data, {width, height, 4}, "output");
+	output.set_stride(0, 4);					 // x方向
+	output.set_stride(1, output_row_stride * 4); // y方向
+	output.set_stride(2, 1);					 // チャンネル方向
 
 	// Halide変数定義
 	Var x("x"), y("y"), c("c");
@@ -302,19 +313,20 @@ static void HalideProcessCircle(
 		Var xi("xi"), yi("yi");
 		process.gpu_tile(x, y, xi, yi, 32, 8);
 
-		// 入力キャッシュをGPUシェアードメモリに配置
-		input_cached.compute_at(process, x).gpu_threads(x, y);
+		// 中間バッファを事前計算（安全性重視）
+		input_cached.compute_root();
+		input_vec.compute_root();
 
 		process.realize(output, g_gpu_context->gpu_target);
 	}
 	else
 	{
 		// CPU実行（SIMD最適化とマルチスレッド）
-		Var yo("yo"), yi("yi");
-		process.split(y, yo, yi, 8).parallel(yo).vectorize(x, 16);
+		process.parallel(y).vectorize(x, 8);
 
-		// 入力キャッシュをタイル単位で計算
-		input_cached.compute_at(process, yi).vectorize(x, 16);
+		// 中間バッファを事前計算
+		input_cached.compute_root();
+		input_vec.compute_root();
 
 		process.realize(output);
 	}
