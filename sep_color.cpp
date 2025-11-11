@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <thread>
 #include <vector>
+#include <type_traits>
 
 /**
  * パフォーマンス最適化の概要（超高速化版 + 全ビット深度対応）:
@@ -127,14 +128,14 @@ struct PixelTraits<PF_PixelFloat>
 {
 	static constexpr float MAX_VALUE = 1.0f;
 	static constexpr float INV_MAX = 1.0f;
-	using ChannelType = PF_FpShort;
+	using ChannelType = float;
 
-	static inline PF_FpShort GetAlpha(const PF_PixelFloat &px) { return px.alpha; }
-	static inline PF_FpShort GetRed(const PF_PixelFloat &px) { return px.red; }
-	static inline PF_FpShort GetGreen(const PF_PixelFloat &px) { return px.green; }
-	static inline PF_FpShort GetBlue(const PF_PixelFloat &px) { return px.blue; }
+	static inline float GetAlpha(const PF_PixelFloat &px) { return px.alpha; }
+	static inline float GetRed(const PF_PixelFloat &px) { return px.red; }
+	static inline float GetGreen(const PF_PixelFloat &px) { return px.green; }
+	static inline float GetBlue(const PF_PixelFloat &px) { return px.blue; }
 
-	static inline void SetChannels(PF_PixelFloat &px, PF_FpShort r, PF_FpShort g, PF_FpShort b, PF_FpShort a)
+	static inline void SetChannels(PF_PixelFloat &px, float r, float g, float b, float a)
 	{
 		px.red = r;
 		px.green = g;
@@ -142,7 +143,7 @@ struct PixelTraits<PF_PixelFloat>
 		px.alpha = a;
 	}
 
-	static inline PF_FpShort Blend(PF_FpShort src, PF_FpShort dst, float coverage_alpha)
+	static inline float Blend(float src, float dst, float coverage_alpha)
 	{
 		return src + (dst - src) * coverage_alpha;
 	}
@@ -274,17 +275,21 @@ static PF_Err RenderTemplate(
 	// カラーパラメータ（8-bitで取得し、各ビット深度に変換）
 	PF_Pixel color_8bit = params[ID_COLOR]->u.cd.value;
 	const float color_scale = Traits::MAX_VALUE / 255.0f;
-
-	// 32-bit floatの場合は丸めなし、8/16-bitの場合は丸め
-	const ChannelType color_r = (Traits::MAX_VALUE == 1.0f)
-									? static_cast<ChannelType>(color_8bit.red * color_scale)
-									: static_cast<ChannelType>(color_8bit.red * color_scale + 0.5f);
-	const ChannelType color_g = (Traits::MAX_VALUE == 1.0f)
-									? static_cast<ChannelType>(color_8bit.green * color_scale)
-									: static_cast<ChannelType>(color_8bit.green * color_scale + 0.5f);
-	const ChannelType color_b = (Traits::MAX_VALUE == 1.0f)
-									? static_cast<ChannelType>(color_8bit.blue * color_scale)
-									: static_cast<ChannelType>(color_8bit.blue * color_scale + 0.5f);
+	
+	// 各ビット深度に変換（float型は丸めなし、整数型は丸めあり）
+	ChannelType color_r, color_g, color_b;
+	if (std::is_floating_point<ChannelType>::value)
+	{
+		color_r = static_cast<ChannelType>(color_8bit.red * color_scale);
+		color_g = static_cast<ChannelType>(color_8bit.green * color_scale);
+		color_b = static_cast<ChannelType>(color_8bit.blue * color_scale);
+	}
+	else
+	{
+		color_r = static_cast<ChannelType>(color_8bit.red * color_scale + 0.5f);
+		color_g = static_cast<ChannelType>(color_8bit.green * color_scale + 0.5f);
+		color_b = static_cast<ChannelType>(color_8bit.blue * color_scale + 0.5f);
+	}
 
 	// マルチスレッド処理用のパラメータ
 	const int num_threads = std::max(1u, std::thread::hardware_concurrency());
@@ -496,11 +501,13 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 
 	PF_EffectWorld *input = &params[0]->u.ld;
 
-	// ビット深度判定（After Effects SDK標準）
+	// ビット深度判定（シンプルな方法）
 	PF_PixelFormat format = PF_PixelFormat_INVALID;
-	AEFX_SuiteScoper<PF_WorldSuite2> wsP = AEFX_SuiteScoper<PF_WorldSuite2>(in_data, kPFWorldSuite, kPFWorldSuiteVersion2, out_data);
-
-	if (wsP->PF_GetPixelFormat(output, &format) == PF_Err_NONE)
+	AEFX_SuiteScoper<PF_WorldSuite2> wsP(in_data, kPFWorldSuite, kPFWorldSuiteVersion2, out_data);
+	
+	err = wsP->PF_GetPixelFormat(output, &format);
+	
+	if (err == PF_Err_NONE)
 	{
 		switch (format)
 		{
@@ -512,7 +519,7 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 				err = RenderTemplate<PF_Pixel>(in_data, out_data, params, output, input_pixels, output_pixels);
 			}
 			break;
-
+			
 		case PF_PixelFormat_ARGB64:
 			// 16-bit
 			{
@@ -521,7 +528,7 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 				err = RenderTemplate<PF_Pixel16>(in_data, out_data, params, output, input_pixels, output_pixels);
 			}
 			break;
-
+			
 		case PF_PixelFormat_ARGB128:
 			// 32-bit float
 			{
@@ -530,18 +537,23 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 				err = RenderTemplate<PF_PixelFloat>(in_data, out_data, params, output, input_pixels, output_pixels);
 			}
 			break;
-
+			
 		default:
-			err = PF_Err_BAD_CALLBACK_PARAM;
+			// デフォルトは8-bit
+			{
+				PF_Pixel *input_pixels = (PF_Pixel *)input->data;
+				PF_Pixel *output_pixels = (PF_Pixel *)output->data;
+				err = RenderTemplate<PF_Pixel>(in_data, out_data, params, output, input_pixels, output_pixels);
+			}
 			break;
 		}
 	}
 	else
 	{
-		// フォールバック: 古い判定方法
+		// フォールバック: PF_WORLD_IS_DEEP を使用
 		if (PF_WORLD_IS_DEEP(output))
 		{
-			// 16-bit（32-bit floatは通常フラグで区別される）
+			// 16-bit
 			PF_Pixel16 *input_pixels = (PF_Pixel16 *)input->data;
 			PF_Pixel16 *output_pixels = (PF_Pixel16 *)output->data;
 			err = RenderTemplate<PF_Pixel16>(in_data, out_data, params, output, input_pixels, output_pixels);
