@@ -84,6 +84,12 @@ jobs:
         if: matrix.platform == 'win'
         uses: microsoft/setup-msbuild@v2
 
+      - name: Set up MSVC Developer Command Prompt (Windows)
+        if: matrix.platform == 'win'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Verify Halide headers (Windows)
         if: matrix.platform == 'win'
         shell: pwsh
