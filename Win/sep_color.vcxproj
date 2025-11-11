@@ -204,11 +204,16 @@
       <RandomizedBaseAddress>true</RandomizedBaseAddress>
       <DataExecutionPrevention>
       </DataExecutionPrevention>
+      <AdditionalDependencies>Halide.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
     </Link>
     <Bscmake>
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
     </Bscmake>
+    <PostBuildEvent>
+      <Command>if exist "$(ProjectDir)..\third_party\halide\win\bin\Halide.dll" copy /Y "$(ProjectDir)..\third_party\halide\win\bin\Halide.dll" "$(OutDir)\Halide.dll"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Midl>
@@ -317,11 +322,16 @@
       <RandomizedBaseAddress>true</RandomizedBaseAddress>
       <DataExecutionPrevention>
       </DataExecutionPrevention>
+      <AdditionalDependencies>Halide.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
     </Link>
     <Bscmake>
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
     </Bscmake>
+    <PostBuildEvent>
+      <Command>if exist "$(ProjectDir)..\third_party\halide\win\bin\Halide.dll" copy /Y "$(ProjectDir)..\third_party\halide\win\bin\Halide.dll" "$(OutDir)\Halide.dll"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <CustomBuild Include="..\sep_colorPiPL.r">
