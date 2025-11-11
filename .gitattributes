@@ -1,1 +1,4 @@
+third_party/halide/win/lib/Halide.lib filter=lfs diff=lfs merge=lfs -text
+third_party/halide/mac/lib/libHalide*.dylib filter=lfs diff=lfs merge=lfs -text
+third_party/halide/win/bin/Halide.dll filter=lfs diff=lfs merge=lfs -text
 third_party/halide/** filter=lfs diff=lfs merge=lfs -text
