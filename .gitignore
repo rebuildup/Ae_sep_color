@@ -1,0 +1,32 @@
+# Build artifacts (Windows/MSVC)
+Win/x64/
+Win/**/Debug/
+Win/**/Release/
+Win/**/ipch/
+*.pdb
+*.ilk
+*.exp
+*.bsc
+*.tlog/
+*.obj
+*.lib
+*.sbr
+
+# Visual Studio local settings
+.vs/
+Win/.vs/
+
+# After Effects plugin outputs
+output/
+*.aex
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+
+# Do not ignore third-party vendor binaries tracked via LFS
+!third_party/
+!third_party/halide/
+!third_party/halide/**/*
+
+
