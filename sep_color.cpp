@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <thread>
 #include <vector>
-#include <type_traits>
 
 /**
  * パフォーマンス最適化の概要（超高速化版 + 全ビット深度対応）:
@@ -93,6 +92,11 @@ struct PixelTraits<PF_Pixel>
 	{
 		return static_cast<A_u_char>(src + (dst - src) * coverage_alpha + 0.5f);
 	}
+
+	static inline A_u_char ConvertFromU8(A_u_char val)
+	{
+		return val; // 8-bit → 8-bit: そのまま
+	}
 };
 
 // ピクセル型の特性（16-bit）
@@ -120,6 +124,12 @@ struct PixelTraits<PF_Pixel16>
 	{
 		return static_cast<A_u_short>(src + (dst - src) * coverage_alpha + 0.5f);
 	}
+
+	static inline A_u_short ConvertFromU8(A_u_char val)
+	{
+		// 8-bit → 16-bit: 128倍して丸める
+		return static_cast<A_u_short>((val * 32768.0f / 255.0f) + 0.5f);
+	}
 };
 
 // ピクセル型の特性（32-bit float）
@@ -146,6 +156,12 @@ struct PixelTraits<PF_PixelFloat>
 	static inline float Blend(float src, float dst, float coverage_alpha)
 	{
 		return src + (dst - src) * coverage_alpha;
+	}
+
+	static inline float ConvertFromU8(A_u_char val)
+	{
+		// 8-bit → 32-bit float: 正規化 (0-1の範囲)
+		return val / 255.0f;
 	}
 };
 
@@ -274,22 +290,9 @@ static PF_Err RenderTemplate(
 
 	// カラーパラメータ（8-bitで取得し、各ビット深度に変換）
 	PF_Pixel color_8bit = params[ID_COLOR]->u.cd.value;
-	const float color_scale = Traits::MAX_VALUE / 255.0f;
-	
-	// 各ビット深度に変換（float型は丸めなし、整数型は丸めあり）
-	ChannelType color_r, color_g, color_b;
-	if (std::is_floating_point<ChannelType>::value)
-	{
-		color_r = static_cast<ChannelType>(color_8bit.red * color_scale);
-		color_g = static_cast<ChannelType>(color_8bit.green * color_scale);
-		color_b = static_cast<ChannelType>(color_8bit.blue * color_scale);
-	}
-	else
-	{
-		color_r = static_cast<ChannelType>(color_8bit.red * color_scale + 0.5f);
-		color_g = static_cast<ChannelType>(color_8bit.green * color_scale + 0.5f);
-		color_b = static_cast<ChannelType>(color_8bit.blue * color_scale + 0.5f);
-	}
+	const ChannelType color_r = Traits::ConvertFromU8(color_8bit.red);
+	const ChannelType color_g = Traits::ConvertFromU8(color_8bit.green);
+	const ChannelType color_b = Traits::ConvertFromU8(color_8bit.blue);
 
 	// マルチスレッド処理用のパラメータ
 	const int num_threads = std::max(1u, std::thread::hardware_concurrency());
@@ -504,9 +507,9 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 	// ビット深度判定（シンプルな方法）
 	PF_PixelFormat format = PF_PixelFormat_INVALID;
 	AEFX_SuiteScoper<PF_WorldSuite2> wsP(in_data, kPFWorldSuite, kPFWorldSuiteVersion2, out_data);
-	
+
 	err = wsP->PF_GetPixelFormat(output, &format);
-	
+
 	if (err == PF_Err_NONE)
 	{
 		switch (format)
@@ -519,7 +522,7 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 				err = RenderTemplate<PF_Pixel>(in_data, out_data, params, output, input_pixels, output_pixels);
 			}
 			break;
-			
+
 		case PF_PixelFormat_ARGB64:
 			// 16-bit
 			{
@@ -528,7 +531,7 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 				err = RenderTemplate<PF_Pixel16>(in_data, out_data, params, output, input_pixels, output_pixels);
 			}
 			break;
-			
+
 		case PF_PixelFormat_ARGB128:
 			// 32-bit float
 			{
@@ -537,7 +540,7 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 				err = RenderTemplate<PF_PixelFloat>(in_data, out_data, params, output, input_pixels, output_pixels);
 			}
 			break;
-			
+
 		default:
 			// デフォルトは8-bit
 			{
