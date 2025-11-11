@@ -12,6 +12,11 @@
 
 using namespace Halide;
 
+// GPU処理を一時的に無効化（ビルド安定性優先）
+// TODO: GPU処理を段階的に有効化
+#define ENABLE_GPU_PROCESSING 0
+
+#if ENABLE_GPU_PROCESSING
 // GPU処理状態を管理する構造体
 struct GPUContext
 {
@@ -21,33 +26,13 @@ struct GPUContext
 	GPUContext()
 	{
 		gpu_available = false;
-
-		try
-		{
-#ifdef _WIN32
-			// Windows: OpenCLを優先（互換性が高い）
-			gpu_target = get_host_target().with_feature(Target::OpenCL);
-			gpu_available = true;
-#elif __APPLE__
-			// macOS: Metalをサポート
-			gpu_target = get_host_target().with_feature(Target::Metal);
-			gpu_available = true;
-#else
-			// Linux: OpenCLをサポート
-			gpu_target = get_host_target().with_feature(Target::OpenCL);
-			gpu_available = true;
-#endif
-		}
-		catch (...)
-		{
-			// GPU初期化失敗時はCPUフォールバック
-			gpu_available = false;
-		}
+		gpu_target = get_host_target();
 	}
 };
 
 // グローバルGPUコンテキスト
 static std::unique_ptr<GPUContext> g_gpu_context;
+#endif
 
 /**
  * パフォーマンス最適化の概要:
@@ -72,7 +57,7 @@ static std::unique_ptr<GPUContext> g_gpu_context;
  * 参考: Intel GPU最適化手法、FXAA技術
  */
 
-// GPU処理のためのHalideパイプライン - Line mode（最適化版）
+// GPU処理のためのHalideパイプライン - Line mode（最適化版・ビルド安定版）
 static void HalideProcessLine(
 	const uint8_t *input_data,
 	uint8_t *output_data,
@@ -91,30 +76,20 @@ static void HalideProcessLine(
 	uint8_t color_b,
 	bool aa_enabled)
 {
-	// 入力バッファの作成 (interleaved RGBA with stride)
-	int input_row_stride = input_stride / 4; // 4 = sizeof(PF_Pixel) = RGBA
-	int output_row_stride = output_stride / 4;
+	// 未使用パラメータの警告を抑制
+	(void)input_stride;
+	(void)output_stride;
 
-	Buffer<uint8_t> input(const_cast<uint8_t *>(input_data), {width, height, 4}, "input");
-	input.set_stride(0, 4);					   // x方向（4チャンネル分）
-	input.set_stride(1, input_row_stride * 4); // y方向（row stride）
-	input.set_stride(2, 1);					   // チャンネル方向
-
-	Buffer<uint8_t> output(output_data, {width, height, 4}, "output");
-	output.set_stride(0, 4);					 // x方向
-	output.set_stride(1, output_row_stride * 4); // y方向
-	output.set_stride(2, 1);					 // チャンネル方向
+	// 入力バッファの作成（簡素化・安定性優先）
+	Buffer<uint8_t> input(const_cast<uint8_t *>(input_data), width, height, 4);
+	Buffer<uint8_t> output(output_data, width, height, 4);
 
 	// Halide変数定義
 	Var x("x"), y("y"), c("c");
 
-	// 入力画像をキャッシュ（メモリアクセス最適化）
-	Func input_cached("input_cached");
-	input_cached(x, y, c) = input(x, y, c);
-
-	// RGBAを分離してベクトル化を最適化
-	Func input_vec("input_vec");
-	input_vec(x, y, c) = cast<float>(input_cached(x, y, c));
+	// 入力をfloatに変換
+	Func input_float("input_float");
+	input_float(x, y, c) = cast<float>(input(x, y, c));
 
 	// メインの処理関数
 	Func process("process");
@@ -125,7 +100,7 @@ static void HalideProcessLine(
 	Expr rotated_x = rx * cos_angle + ry * sin_angle;
 
 	// アルファ値を取得（プレマルチプライド処理用）
-	Expr input_alpha = input_vec(x, y, 3);
+	Expr input_alpha = input_float(x, y, 3);
 	Expr alpha_factor = input_alpha / 255.0f;
 
 	if (!aa_enabled)
@@ -138,10 +113,10 @@ static void HalideProcessLine(
 								   input_alpha);
 
 		process(x, y, c) = select(
-			c == 3, cast<uint8_t>(input_alpha),							 // アルファチャンネルは維持
-			alpha_factor < 0.003921f, cast<uint8_t>(input_vec(x, y, c)), // ほぼ透明（1/255未満）
+			c == 3, cast<uint8_t>(input_alpha),							   // アルファチャンネルは維持
+			alpha_factor < 0.003921f, cast<uint8_t>(input_float(x, y, c)), // ほぼ透明（1/255未満）
 			in_region, cast<uint8_t>(target_color),
-			cast<uint8_t>(input_vec(x, y, c)));
+			cast<uint8_t>(input_float(x, y, c)));
 	}
 	else
 	{
@@ -169,39 +144,33 @@ static void HalideProcessLine(
 
 		// 最終的なブレンド（アルファ値も考慮）
 		process(x, y, c) = select(
-			c == 3, cast<uint8_t>(input_alpha),							 // アルファチャンネルは維持
-			alpha_factor < 0.003921f, cast<uint8_t>(input_vec(x, y, c)), // ほぼ透明
-			cast<uint8_t>(input_vec(x, y, c) * (1.0f - effective_coverage) +
+			c == 3, cast<uint8_t>(input_alpha),							   // アルファチャンネルは維持
+			alpha_factor < 0.003921f, cast<uint8_t>(input_float(x, y, c)), // ほぼ透明
+			cast<uint8_t>(input_float(x, y, c) * (1.0f - effective_coverage) +
 						  target_color * effective_coverage + 0.5f));
 	}
 
-	// 最適化されたスケジューリング
+	// 最適化されたスケジューリング（CPU専用・ビルド安定版）
+#if ENABLE_GPU_PROCESSING
 	if (g_gpu_context && g_gpu_context->gpu_available)
 	{
-		// GPU実行（タイルサイズを32x8に最適化、メモリ合体アクセス改善）
+		// GPU実行
 		Var xi("xi"), yi("yi");
 		process.gpu_tile(x, y, xi, yi, 32, 8);
-
-		// 中間バッファを事前計算（安全性重視）
-		input_cached.compute_root();
-		input_vec.compute_root();
-
+		input_float.compute_root();
 		process.realize(output, g_gpu_context->gpu_target);
 	}
 	else
+#endif
 	{
 		// CPU実行（SIMD最適化とマルチスレッド）
 		process.parallel(y).vectorize(x, 8);
-
-		// 中間バッファを事前計算
-		input_cached.compute_root();
-		input_vec.compute_root();
-
+		input_float.compute_root();
 		process.realize(output);
 	}
 }
 
-// GPU処理のためのHalideパイプライン - Circle mode（最適化版）
+// GPU処理のためのHalideパイプライン - Circle mode（最適化版・ビルド安定版）
 static void HalideProcessCircle(
 	const uint8_t *input_data,
 	uint8_t *output_data,
@@ -219,30 +188,20 @@ static void HalideProcessCircle(
 	uint8_t color_b,
 	bool aa_enabled)
 {
-	// 入力バッファの作成 (interleaved RGBA with stride)
-	int input_row_stride = input_stride / 4; // 4 = sizeof(PF_Pixel) = RGBA
-	int output_row_stride = output_stride / 4;
+	// 未使用パラメータの警告を抑制
+	(void)input_stride;
+	(void)output_stride;
 
-	Buffer<uint8_t> input(const_cast<uint8_t *>(input_data), {width, height, 4}, "input");
-	input.set_stride(0, 4);					   // x方向（4チャンネル分）
-	input.set_stride(1, input_row_stride * 4); // y方向（row stride）
-	input.set_stride(2, 1);					   // チャンネル方向
-
-	Buffer<uint8_t> output(output_data, {width, height, 4}, "output");
-	output.set_stride(0, 4);					 // x方向
-	output.set_stride(1, output_row_stride * 4); // y方向
-	output.set_stride(2, 1);					 // チャンネル方向
+	// 入力バッファの作成（簡素化・安定性優先）
+	Buffer<uint8_t> input(const_cast<uint8_t *>(input_data), width, height, 4);
+	Buffer<uint8_t> output(output_data, width, height, 4);
 
 	// Halide変数定義
 	Var x("x"), y("y"), c("c");
 
-	// 入力画像をキャッシュ（メモリアクセス最適化）
-	Func input_cached("input_cached");
-	input_cached(x, y, c) = input(x, y, c);
-
-	// RGBAを分離してベクトル化を最適化
-	Func input_vec("input_vec");
-	input_vec(x, y, c) = cast<float>(input_cached(x, y, c));
+	// 入力をfloatに変換
+	Func input_float("input_float");
+	input_float(x, y, c) = cast<float>(input(x, y, c));
 
 	// メインの処理関数
 	Func process("process");
@@ -256,7 +215,7 @@ static void HalideProcessCircle(
 	Expr r2 = radius * radius;
 
 	// アルファ値を取得（プレマルチプライド処理用）
-	Expr input_alpha = input_vec(x, y, 3);
+	Expr input_alpha = input_float(x, y, 3);
 	Expr alpha_factor = input_alpha / 255.0f;
 
 	if (!aa_enabled)
@@ -269,15 +228,14 @@ static void HalideProcessCircle(
 								   input_alpha);
 
 		process(x, y, c) = select(
-			c == 3, cast<uint8_t>(input_alpha),							 // アルファチャンネルは維持
-			alpha_factor < 0.003921f, cast<uint8_t>(input_vec(x, y, c)), // ほぼ透明（1/255未満）
+			c == 3, cast<uint8_t>(input_alpha),							   // アルファチャンネルは維持
+			alpha_factor < 0.003921f, cast<uint8_t>(input_float(x, y, c)), // ほぼ透明（1/255未満）
 			in_region, cast<uint8_t>(target_color),
-			cast<uint8_t>(input_vec(x, y, c)));
+			cast<uint8_t>(input_float(x, y, c)));
 	}
 	else
 	{
 		// 距離ベースのアンチエイリアス（解析的手法、5段階: 0, 0.25, 0.5, 0.75, 1）
-		// fast_inverse_sqrt を使用して高速化
 		Expr dist = sqrt(dist2);
 		Expr edge_width = 0.707f; // sqrt(2)/2 ピクセル境界の対角線幅
 		Expr signed_dist = (radius - dist) / edge_width;
@@ -300,34 +258,28 @@ static void HalideProcessCircle(
 
 		// 最終的なブレンド（アルファ値も考慮）
 		process(x, y, c) = select(
-			c == 3, cast<uint8_t>(input_alpha),							 // アルファチャンネルは維持
-			alpha_factor < 0.003921f, cast<uint8_t>(input_vec(x, y, c)), // ほぼ透明
-			cast<uint8_t>(input_vec(x, y, c) * (1.0f - effective_coverage) +
+			c == 3, cast<uint8_t>(input_alpha),							   // アルファチャンネルは維持
+			alpha_factor < 0.003921f, cast<uint8_t>(input_float(x, y, c)), // ほぼ透明
+			cast<uint8_t>(input_float(x, y, c) * (1.0f - effective_coverage) +
 						  target_color * effective_coverage + 0.5f));
 	}
 
-	// 最適化されたスケジューリング
+	// 最適化されたスケジューリング（CPU専用・ビルド安定版）
+#if ENABLE_GPU_PROCESSING
 	if (g_gpu_context && g_gpu_context->gpu_available)
 	{
-		// GPU実行（タイルサイズを32x8に最適化、メモリ合体アクセス改善）
+		// GPU実行
 		Var xi("xi"), yi("yi");
 		process.gpu_tile(x, y, xi, yi, 32, 8);
-
-		// 中間バッファを事前計算（安全性重視）
-		input_cached.compute_root();
-		input_vec.compute_root();
-
+		input_float.compute_root();
 		process.realize(output, g_gpu_context->gpu_target);
 	}
 	else
+#endif
 	{
 		// CPU実行（SIMD最適化とマルチスレッド）
 		process.parallel(y).vectorize(x, 8);
-
-		// 中間バッファを事前計算
-		input_cached.compute_root();
-		input_vec.compute_root();
-
+		input_float.compute_root();
 		process.realize(output);
 	}
 }
@@ -370,11 +322,13 @@ GlobalSetup(
 
 	out_data->out_flags2 |= PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
 
-	// GPUコンテキストの初期化
+#if ENABLE_GPU_PROCESSING
+	// GPUコンテキストの初期化（現在は無効）
 	if (!g_gpu_context)
 	{
 		g_gpu_context = std::make_unique<GPUContext>();
 	}
+#endif
 
 	return PF_Err_NONE;
 }
@@ -452,8 +406,11 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 
 	PF_Pixel color = params[ID_COLOR]->u.cd.value;
 
-	// GPU処理の試行
-	bool use_gpu = (g_gpu_context && g_gpu_context->gpu_available);
+	// GPU処理の試行（現在は無効）
+	bool use_gpu = false;
+#if ENABLE_GPU_PROCESSING
+	use_gpu = (g_gpu_context && g_gpu_context->gpu_available);
+#endif
 
 	if (use_gpu)
 	{
