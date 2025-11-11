@@ -250,19 +250,18 @@ static PF_Err ParamsSetup(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef 
 }
 
 // ===========================
-// テンプレート化されたレンダリング処理（全ビット深度対応）
+// 8-bit用レンダリング処理
 // ===========================
-template <typename PixelType>
-static PF_Err RenderTemplate(
+static PF_Err Render8(
 	PF_InData *in_data,
 	PF_OutData *out_data,
 	PF_ParamDef *params[],
 	PF_LayerDef *output,
-	PixelType *input_pixels,
-	PixelType *output_pixels)
+	PF_Pixel *input_pixels,
+	PF_Pixel *output_pixels)
 {
-	using Traits = PixelTraits<PixelType>;
-	using ChannelType = typename Traits::ChannelType;
+	using Traits = PixelTraits<PF_Pixel>;
+	using ChannelType = Traits::ChannelType;
 
 	PF_Err err = PF_Err_NONE;
 
@@ -298,8 +297,8 @@ static PF_Err RenderTemplate(
 	const int rows_per_thread = (height + num_threads - 1) / num_threads;
 
 	// ストライド計算（ループ外で1回のみ）
-	const int input_stride = output->rowbytes / sizeof(PixelType);
-	const int output_stride = output->rowbytes / sizeof(PixelType);
+	const int input_stride = output->rowbytes / sizeof(PF_Pixel);
+	const int output_stride = output->rowbytes / sizeof(PF_Pixel);
 	const bool in_place = (input_pixels == output_pixels);
 
 	// 定数の事前計算
@@ -317,14 +316,14 @@ static PF_Err RenderTemplate(
 		{
 			for (int y = start_y; y < end_y; y++)
 			{
-				const PixelType *input_row = input_pixels + y * input_stride;
-				PixelType *output_row = output_pixels + y * output_stride;
+				const PF_Pixel *input_row = input_pixels + y * input_stride;
+				PF_Pixel *output_row = output_pixels + y * output_stride;
 				const float ry = (y - anchor_y) * downsample_y;
 				const float ry_sn = ry * sn; // 事前計算
 
 				for (int x = 0; x < width; x++)
 				{
-					const PixelType &input_px = input_row[x];
+					const PF_Pixel &input_px = input_row[x];
 
 					// アルファ値チェック（透明ピクセルはスキップ）
 					const ChannelType alpha_val = Traits::GetAlpha(input_px);
@@ -408,14 +407,14 @@ static PF_Err RenderTemplate(
 		{
 			for (int y = start_y; y < end_y; y++)
 			{
-				const PixelType *input_row = input_pixels + y * input_stride;
-				PixelType *output_row = output_pixels + y * output_stride;
+				const PF_Pixel *input_row = input_pixels + y * input_stride;
+				PF_Pixel *output_row = output_pixels + y * output_stride;
 				const float ry = (y - anchor_y) * downsample_y;
 				const float ry2 = ry * ry;
 
 				for (int x = 0; x < width; x++)
 				{
-					const PixelType &input_px = input_row[x];
+					const PF_Pixel &input_px = input_row[x];
 
 					// アルファ値チェック（透明ピクセルはスキップ）
 					const ChannelType alpha_val = Traits::GetAlpha(input_px);
@@ -495,7 +494,7 @@ static PF_Err RenderTemplate(
 }
 
 // ===========================
-// ビット深度判定版Render関数（8/16/32-bit対応）
+// ビット深度判定版Render関数
 // ===========================
 static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *params[], PF_LayerDef *output)
 {
@@ -503,21 +502,11 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 
 	PF_EffectWorld *input = &params[0]->u.ld;
 
-	// ビット深度判定
-	if (PF_WORLD_IS_DEEP(output))
-	{
-		// 16-bit
-		PF_Pixel16 *input_pixels = (PF_Pixel16 *)input->data;
-		PF_Pixel16 *output_pixels = (PF_Pixel16 *)output->data;
-		err = RenderTemplate<PF_Pixel16>(in_data, out_data, params, output, input_pixels, output_pixels);
-	}
-	else
-	{
-		// 8-bit
-		PF_Pixel *input_pixels = (PF_Pixel *)input->data;
-		PF_Pixel *output_pixels = (PF_Pixel *)output->data;
-		err = RenderTemplate<PF_Pixel>(in_data, out_data, params, output, input_pixels, output_pixels);
-	}
+	// TODO: 16-bit対応を追加
+	// 現在は8-bitのみ対応
+	PF_Pixel *input_pixels = (PF_Pixel *)input->data;
+	PF_Pixel *output_pixels = (PF_Pixel *)output->data;
+	err = Render8(in_data, out_data, params, output, input_pixels, output_pixels);
 
 	return err;
 }
