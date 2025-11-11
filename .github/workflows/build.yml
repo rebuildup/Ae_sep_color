@@ -175,6 +175,21 @@ jobs:
           
           $assetName = "${{ matrix.sdk_file }}"
           $asset = $releaseJson.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
+
+          if (-not $asset) {
+            Write-Host "Exact asset not found: $assetName"
+            Write-Host "Available assets:"
+            $releaseJson.assets | ForEach-Object { Write-Host " - " $_.name }
+
+            # Fallback: pick first Windows-looking ZIP asset
+            $asset = $releaseJson.assets | Where-Object {
+              $_.name -match '(?i)win.*\\.zip$'
+            } | Select-Object -First 1
+
+            if ($asset) {
+              Write-Host "Fallback asset selected: $($asset.name)"
+            }
+          }
           
           if (-not $asset) {
             Write-Host "Error: SDK file not found: $assetName"
@@ -187,7 +202,7 @@ jobs:
             "Accept" = "application/octet-stream"
           }
           
-          Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "AE_SDK.zip"
+          Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "AE_SDK.zip" -MaximumRedirection 5
           
           if (-not (Test-Path "AE_SDK.zip")) {
             Write-Host "Error: Download failed"
