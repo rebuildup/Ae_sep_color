@@ -55,115 +55,12 @@
 
 // 定数定義
 static constexpr float INV_255 = 1.0f / 255.0f;
-static constexpr float INV_32768 = 1.0f / 32768.0f;
 
-// ===========================
-// テンプレートベース：全ビット深度対応
-// ===========================
-
-// ピクセル型の特性（8-bit）
-template <typename T>
-struct PixelTraits
+// 高速ブレンディング関数
+static inline A_u_char FastBlend(A_u_char src, A_u_char dst, float coverage_alpha)
 {
-};
-
-template <>
-struct PixelTraits<PF_Pixel>
-{
-	static constexpr float MAX_VALUE = 255.0f;
-	static constexpr float INV_MAX = INV_255;
-	using ChannelType = A_u_char;
-
-	static inline A_u_char GetAlpha(const PF_Pixel &px) { return px.alpha; }
-	static inline A_u_char GetRed(const PF_Pixel &px) { return px.red; }
-	static inline A_u_char GetGreen(const PF_Pixel &px) { return px.green; }
-	static inline A_u_char GetBlue(const PF_Pixel &px) { return px.blue; }
-
-	static inline void SetChannels(PF_Pixel &px, A_u_char r, A_u_char g, A_u_char b, A_u_char a)
-	{
-		px.red = r;
-		px.green = g;
-		px.blue = b;
-		px.alpha = a;
-	}
-
-	static inline A_u_char Blend(A_u_char src, A_u_char dst, float coverage_alpha)
-	{
-		return static_cast<A_u_char>(src + (dst - src) * coverage_alpha + 0.5f);
-	}
-
-	static inline A_u_char ConvertFromU8(A_u_char val)
-	{
-		return val; // 8-bit → 8-bit: そのまま
-	}
-};
-
-// ピクセル型の特性（16-bit）
-template <>
-struct PixelTraits<PF_Pixel16>
-{
-	static constexpr float MAX_VALUE = 32768.0f;
-	static constexpr float INV_MAX = INV_32768;
-	using ChannelType = A_u_short;
-
-	static inline A_u_short GetAlpha(const PF_Pixel16 &px) { return px.alpha; }
-	static inline A_u_short GetRed(const PF_Pixel16 &px) { return px.red; }
-	static inline A_u_short GetGreen(const PF_Pixel16 &px) { return px.green; }
-	static inline A_u_short GetBlue(const PF_Pixel16 &px) { return px.blue; }
-
-	static inline void SetChannels(PF_Pixel16 &px, A_u_short r, A_u_short g, A_u_short b, A_u_short a)
-	{
-		px.red = r;
-		px.green = g;
-		px.blue = b;
-		px.alpha = a;
-	}
-
-	static inline A_u_short Blend(A_u_short src, A_u_short dst, float coverage_alpha)
-	{
-		return static_cast<A_u_short>(src + (dst - src) * coverage_alpha + 0.5f);
-	}
-
-	static inline A_u_short ConvertFromU8(A_u_char val)
-	{
-		// 8-bit → 16-bit: 128倍して丸める
-		return static_cast<A_u_short>((val * 32768.0f / 255.0f) + 0.5f);
-	}
-};
-
-// 32-bit floatサポート（PF_PixelFloatが利用可能な場合）
-#ifdef PF_PixelFloat
-template <>
-struct PixelTraits<PF_PixelFloat>
-{
-	static constexpr float MAX_VALUE = 1.0f;
-	static constexpr float INV_MAX = 1.0f;
-	using ChannelType = float;
-
-	static inline float GetAlpha(const PF_PixelFloat &px) { return px.alpha; }
-	static inline float GetRed(const PF_PixelFloat &px) { return px.red; }
-	static inline float GetGreen(const PF_PixelFloat &px) { return px.green; }
-	static inline float GetBlue(const PF_PixelFloat &px) { return px.blue; }
-
-	static inline void SetChannels(PF_PixelFloat &px, float r, float g, float b, float a)
-	{
-		px.red = r;
-		px.green = g;
-		px.blue = b;
-		px.alpha = a;
-	}
-
-	static inline float Blend(float src, float dst, float coverage_alpha)
-	{
-		return src + (dst - src) * coverage_alpha;
-	}
-
-	static inline float ConvertFromU8(A_u_char val)
-	{
-		return val / 255.0f;
-	}
-};
-#endif
+	return static_cast<A_u_char>(src + (dst - src) * coverage_alpha + 0.5f);
+}
 
 static PF_Err
 About(
@@ -199,10 +96,11 @@ GlobalSetup(
 		STAGE_VERSION,
 		BUILD_VERSION);
 
-	// 8-bit, 16-bit 対応
-	out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE;
-	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_THREADED_RENDERING |
-						   PF_OutFlag2_SUPPORTS_SMART_RENDER;
+	// 8-bit対応（将来16-bit対応予定）
+	out_data->out_flags = PF_OutFlag_PIX_INDEPENDENT;
+
+	// マルチスレッドレンダリングサポート（MultiSlicerと同じ方式）
+	out_data->out_flags2 = 0x08000000; // PF_OutFlag2_SUPPORTS_THREADED_RENDERING
 
 	return PF_Err_NONE;
 }
@@ -260,9 +158,6 @@ static PF_Err Render8(
 	PF_Pixel *input_pixels,
 	PF_Pixel *output_pixels)
 {
-	using Traits = PixelTraits<PF_Pixel>;
-	using ChannelType = Traits::ChannelType;
-
 	PF_Err err = PF_Err_NONE;
 
 	int width = output->width;
@@ -286,11 +181,8 @@ static PF_Err Render8(
 	int aaPopup = params[ID_AA]->u.pd.value;
 	bool aaEnabled = (aaPopup == 2);
 
-	// カラーパラメータ（8-bitで取得し、各ビット深度に変換）
-	PF_Pixel color_8bit = params[ID_COLOR]->u.cd.value;
-	const ChannelType color_r = Traits::ConvertFromU8(color_8bit.red);
-	const ChannelType color_g = Traits::ConvertFromU8(color_8bit.green);
-	const ChannelType color_b = Traits::ConvertFromU8(color_8bit.blue);
+	// カラーパラメータ
+	PF_Pixel color = params[ID_COLOR]->u.cd.value;
 
 	// マルチスレッド処理用のパラメータ
 	const int num_threads = std::max(1u, std::thread::hardware_concurrency());
@@ -326,8 +218,7 @@ static PF_Err Render8(
 					const PF_Pixel &input_px = input_row[x];
 
 					// アルファ値チェック（透明ピクセルはスキップ）
-					const ChannelType alpha_val = Traits::GetAlpha(input_px);
-					if (alpha_val == 0)
+					if (input_px.alpha == 0)
 					{
 						if (!in_place)
 							output_row[x] = input_px;
@@ -342,7 +233,10 @@ static PF_Err Render8(
 						// アンチエイリアスなし（高速パス）
 						if (rotated_x > 0.0f)
 						{
-							Traits::SetChannels(output_row[x], color_r, color_g, color_b, alpha_val);
+							output_row[x].red = color.red;
+							output_row[x].green = color.green;
+							output_row[x].blue = color.blue;
+							output_row[x].alpha = input_px.alpha;
 						}
 						else if (!in_place)
 						{
@@ -363,16 +257,19 @@ static PF_Err Render8(
 						}
 						else if (coverage >= 0.9999f)
 						{
-							Traits::SetChannels(output_row[x], color_r, color_g, color_b, alpha_val);
+							output_row[x].red = color.red;
+							output_row[x].green = color.green;
+							output_row[x].blue = color.blue;
+							output_row[x].alpha = input_px.alpha;
 						}
 						else
 						{
 							// 高速ブレンディング
-							const float coverage_alpha = coverage * alpha_val * Traits::INV_MAX;
-							const ChannelType r = Traits::Blend(Traits::GetRed(input_px), color_r, coverage_alpha);
-							const ChannelType g = Traits::Blend(Traits::GetGreen(input_px), color_g, coverage_alpha);
-							const ChannelType b = Traits::Blend(Traits::GetBlue(input_px), color_b, coverage_alpha);
-							Traits::SetChannels(output_row[x], r, g, b, alpha_val);
+							const float coverage_alpha = coverage * input_px.alpha * INV_255;
+							output_row[x].red = FastBlend(input_px.red, color.red, coverage_alpha);
+							output_row[x].green = FastBlend(input_px.green, color.green, coverage_alpha);
+							output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage_alpha);
+							output_row[x].alpha = input_px.alpha;
 						}
 					}
 				}
@@ -417,8 +314,7 @@ static PF_Err Render8(
 					const PF_Pixel &input_px = input_row[x];
 
 					// アルファ値チェック（透明ピクセルはスキップ）
-					const ChannelType alpha_val = Traits::GetAlpha(input_px);
-					if (alpha_val == 0)
+					if (input_px.alpha == 0)
 					{
 						if (!in_place)
 							output_row[x] = input_px;
@@ -433,7 +329,10 @@ static PF_Err Render8(
 						// アンチエイリアスなし（平方根計算不要）
 						if (dist2 <= r2)
 						{
-							Traits::SetChannels(output_row[x], color_r, color_g, color_b, alpha_val);
+							output_row[x].red = color.red;
+							output_row[x].green = color.green;
+							output_row[x].blue = color.blue;
+							output_row[x].alpha = input_px.alpha;
 						}
 						else if (!in_place)
 						{
@@ -455,16 +354,19 @@ static PF_Err Render8(
 						}
 						else if (coverage >= 0.9999f)
 						{
-							Traits::SetChannels(output_row[x], color_r, color_g, color_b, alpha_val);
+							output_row[x].red = color.red;
+							output_row[x].green = color.green;
+							output_row[x].blue = color.blue;
+							output_row[x].alpha = input_px.alpha;
 						}
 						else
 						{
 							// 高速ブレンディング
-							const float coverage_alpha = coverage * alpha_val * Traits::INV_MAX;
-							const ChannelType r = Traits::Blend(Traits::GetRed(input_px), color_r, coverage_alpha);
-							const ChannelType g = Traits::Blend(Traits::GetGreen(input_px), color_g, coverage_alpha);
-							const ChannelType b = Traits::Blend(Traits::GetBlue(input_px), color_b, coverage_alpha);
-							Traits::SetChannels(output_row[x], r, g, b, alpha_val);
+							const float coverage_alpha = coverage * input_px.alpha * INV_255;
+							output_row[x].red = FastBlend(input_px.red, color.red, coverage_alpha);
+							output_row[x].green = FastBlend(input_px.green, color.green, coverage_alpha);
+							output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage_alpha);
+							output_row[x].alpha = input_px.alpha;
 						}
 					}
 				}
