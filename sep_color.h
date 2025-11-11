@@ -17,6 +17,7 @@ typedef short int int16;
 #include "AEConfig.h"
 
 #ifdef AE_OS_WIN
+#define NOMINMAX // prevent Windows headers from defining min/max macros
 typedef unsigned short PixelType;
 #include <Windows.h>
 #endif

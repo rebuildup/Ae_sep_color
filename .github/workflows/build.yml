@@ -41,9 +41,29 @@ jobs:
         if: matrix.platform == 'mac'
         run: sudo xcodebuild -license accept
 
+      - name: Verify Halide headers (Mac)
+        if: matrix.platform == 'mac'
+        run: |
+          set -e
+          clang++ -std=c++17 -c build_tests/check_halide_include.cpp \
+            -I third_party/halide/include \
+            -o /tmp/halide_header_test.o
+
       - name: Set up MSBuild (Windows)
         if: matrix.platform == 'win'
         uses: microsoft/setup-msbuild@v2
+
+      - name: Verify Halide headers (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $source = "build_tests\check_halide_include.cpp"
+          if (-not (Test-Path $source)) {
+            Write-Error "Missing Halide include check source file: $source"
+            exit 1
+          }
+          $output = Join-Path $env:TEMP "halide_header_test.obj"
+          cl /nologo /std:c++17 /c $source /I third_party\halide\include /Fo:$output
 
       - name: Download After Effects SDK (Mac)
         if: matrix.platform == 'mac'

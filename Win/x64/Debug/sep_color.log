@@ -8,4 +8,11 @@
   Copyright (C) Microsoft Corporation.  All rights reserved.
   
   sep_colorPiPL.rrc
+  AEGP_SuiteHandler.cpp
+  MissingSuiteError.cpp
+  sep_color.cpp
+  sep_color_Strings.cpp
+  コードを生成中...
+     ライブラリ x64\Debug\/sep_color.lib とオブジェクト x64\Debug\/sep_color.exp を作成中
   sep_color.vcxproj -> D:\1_projects\AfterEffects\plugin\SDK\Template\sep_color\output\sep_color.aex
+          1 個のファイルをコピーしました。

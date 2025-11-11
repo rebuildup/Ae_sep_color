@@ -1,6 +1,10 @@
 #include "sep_color.h"
 #include "sep_color_Strings.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+
 static PF_Err
 About(
 	PF_InData *in_data,
@@ -83,11 +87,6 @@ static PF_Err ParamsSetup(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef 
 	out_data->num_params = SKELETON_NUM_PARAMS;
 	return PF_Err_NONE;
 }
-
-#include <mutex>
-std::mutex renderMutex;
-#include <algorithm>
-#include <cmath>
 
 static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *params[], PF_LayerDef *output)
 {

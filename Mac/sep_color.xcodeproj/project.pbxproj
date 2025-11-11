@@ -86,6 +86,7 @@
 				C4E618C8095A3CE80012CA3F /* Resources */,
 				C4E618C9095A3CE80012CA3F /* Sources */,
 				C4E618CA095A3CE80012CA3F /* Frameworks */,
+				D7BF1A6E2CFF43F498C7A5B9 /* Copy Halide runtime */,
 			);
 			buildRules = (
 			);
@@ -133,6 +134,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		D7BF1A6E2CFF43F498C7A5B9 /* Copy Halide runtime */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(PROJECT_DIR)/../third_party/halide/mac/lib/libHalide.21.0.0.dylib",
+			);
+			name = "Copy Halide runtime";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(PRODUCT_NAME).plugin/Contents/MacOS/libHalide.21.0.0.dylib",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nHALIDE_SRC=\"${PROJECT_DIR}/../third_party/halide/mac/lib/libHalide.21.0.0.dylib\"\nPLUGIN_BUNDLE=\"${TARGET_BUILD_DIR}/${PRODUCT_NAME}.plugin\"\nPLUGIN_BIN=\"${TARGET_BUILD_DIR}/${EXECUTABLE_PATH}\"\nDEST_DIR=\"${PLUGIN_BUNDLE}/Contents/MacOS\"\nif [ -f \"${HALIDE_SRC}\" ]; then\n  mkdir -p \"${DEST_DIR}\"\n  cp -f \"${HALIDE_SRC}\" \"${DEST_DIR}\"\n  /usr/bin/install_name_tool -id \"@loader_path/libHalide.21.0.0.dylib\" \"${DEST_DIR}/libHalide.21.0.0.dylib\" || true\n  if [ -f \"${PLUGIN_BIN}\" ]; then\n    /usr/bin/install_name_tool -add_rpath \"@loader_path\" \"${PLUGIN_BIN}\" 2>/dev/null || true\n    /usr/bin/install_name_tool -change \"${HALIDE_SRC}\" \"@loader_path/libHalide.21.0.0.dylib\" \"${PLUGIN_BIN}\" || true\n  fi\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		C4E618C9095A3CE80012CA3F /* Sources */ = {
@@ -202,6 +222,7 @@
 					../../../Util,
 					../../../Headers/SP,
 					../../../Resources,
+					"$(PROJECT_DIR)/../third_party/halide/include",
 				);
 				ONLY_ACTIVE_ARCH = YES;
 				REZ_PREPROCESSOR_DEFINITIONS = __MACH__;
@@ -225,6 +246,22 @@
 				PRODUCT_NAME = sep_color;
 				SDKROOT = macosx;
 				ZERO_LINK = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../third_party/halide/include",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../third_party/halide/mac/lib",
+				);
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../third_party/halide/mac/lib/libHalide.21.0.0.dylib",
+				);
 			};
 			name = Debug;
 		};
