@@ -4,35 +4,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <memory>
-
-// Halide includes
-#include "Halide.h"
-#include "HalideBuffer.h"
-
-using namespace Halide;
-
-// GPU処理を一時的に無効化（ビルド安定性優先）
-// TODO: GPU処理を段階的に有効化
-#define ENABLE_GPU_PROCESSING 0
-
-#if ENABLE_GPU_PROCESSING
-// GPU処理状態を管理する構造体
-struct GPUContext
-{
-	bool gpu_available;
-	Target gpu_target;
-
-	GPUContext()
-	{
-		gpu_available = false;
-		gpu_target = get_host_target();
-	}
-};
-
-// グローバルGPUコンテキスト
-static std::unique_ptr<GPUContext> g_gpu_context;
-#endif
+#include <thread>
+#include <vector>
 
 /**
  * パフォーマンス最適化の概要:
@@ -49,239 +22,27 @@ static std::unique_ptr<GPUContext> g_gpu_context;
  *    - プレマルチプライドアルファ処理
  *    - 元のアルファ値を考慮したブレンディング
  *
- * 4. メモリアクセス最適化
- *    - GPU: 32×8タイル（メモリ合体アクセス）
- *    - CPU: 16要素SIMD + キャッシュ最適化
- *    - シェアードメモリ活用
+ * 4. マルチスレッド処理
+ *    - 複数スレッドで並列処理
+ *    - キャッシュフレンドリーなアクセスパターン
  *
  * 参考: Intel GPU最適化手法、FXAA技術
  */
 
-// GPU処理のためのHalideパイプライン - Line mode（最適化版・ビルド安定版）
-static void HalideProcessLine(
-	const uint8_t *input_data,
-	uint8_t *output_data,
-	int width,
-	int height,
-	int input_stride,
-	int output_stride,
-	int anchor_x,
-	int anchor_y,
-	float downsample_x,
-	float downsample_y,
-	float cos_angle,
-	float sin_angle,
-	uint8_t color_r,
-	uint8_t color_g,
-	uint8_t color_b,
-	bool aa_enabled)
+// ヘルパー関数: 5段階量子化
+inline float Quantize5Levels(float value)
 {
-	// 未使用パラメータの警告を抑制
-	(void)input_stride;
-	(void)output_stride;
-
-	// 入力バッファの作成（簡素化・安定性優先）
-	Buffer<uint8_t> input(const_cast<uint8_t *>(input_data), width, height, 4);
-	Buffer<uint8_t> output(output_data, width, height, 4);
-
-	// Halide変数定義
-	Var x("x"), y("y"), c("c");
-
-	// 入力をfloatに変換
-	Func input_float("input_float");
-	input_float(x, y, c) = cast<float>(input(x, y, c));
-
-	// メインの処理関数
-	Func process("process");
-
-	// 座標変換（計算を共通化）
-	Expr rx = cast<float>(x - anchor_x) * downsample_x;
-	Expr ry = cast<float>(y - anchor_y) * downsample_y;
-	Expr rotated_x = rx * cos_angle + ry * sin_angle;
-
-	// アルファ値を取得（プレマルチプライド処理用）
-	Expr input_alpha = input_float(x, y, 3);
-	Expr alpha_factor = input_alpha / 255.0f;
-
-	if (!aa_enabled)
-	{
-		// アンチエイリアスなし（高速パス）
-		Expr in_region = rotated_x > 0.0f;
-		Expr target_color = select(c == 0, cast<float>(color_r),
-								   c == 1, cast<float>(color_g),
-								   c == 2, cast<float>(color_b),
-								   input_alpha);
-
-		process(x, y, c) = select(
-			c == 3, cast<uint8_t>(input_alpha),							   // アルファチャンネルは維持
-			alpha_factor < 0.003921f, cast<uint8_t>(input_float(x, y, c)), // ほぼ透明（1/255未満）
-			in_region, cast<uint8_t>(target_color),
-			cast<uint8_t>(input_float(x, y, c)));
-	}
-	else
-	{
-		// 距離ベースのアンチエイリアス（解析的手法、5段階: 0, 0.25, 0.5, 0.75, 1）
-		// サンプリング不要で計算量削減
-		Expr edge_width = 0.707f; // sqrt(2)/2 ピクセル境界の対角線幅
-		Expr signed_dist = rotated_x / edge_width;
-
-		// 5段階の離散化（0, 0.25, 0.5, 0.75, 1）
-		// clampで範囲を[-1, 1]に制限してから[0, 1]に変換
-		Expr clamped_dist = clamp(signed_dist, -1.0f, 1.0f);
-		Expr coverage_cont = (clamped_dist + 1.0f) * 0.5f; // [0, 1]
-
-		// 5段階に量子化（0, 0.25, 0.5, 0.75, 1）
-		Expr coverage_quantized = floor(coverage_cont * 4.0f + 0.5f) * 0.25f;
-		Expr coverage = clamp(coverage_quantized, 0.0f, 1.0f);
-
-		// アルファ値を考慮したブレンディング（プレマルチプライド）
-		Expr effective_coverage = coverage * alpha_factor;
-
-		// カラー値の計算（RGB）
-		Expr target_color = select(c == 0, cast<float>(color_r),
-								   c == 1, cast<float>(color_g),
-								   cast<float>(color_b));
-
-		// 最終的なブレンド（アルファ値も考慮）
-		process(x, y, c) = select(
-			c == 3, cast<uint8_t>(input_alpha),							   // アルファチャンネルは維持
-			alpha_factor < 0.003921f, cast<uint8_t>(input_float(x, y, c)), // ほぼ透明
-			cast<uint8_t>(input_float(x, y, c) * (1.0f - effective_coverage) +
-						  target_color * effective_coverage + 0.5f));
-	}
-
-	// 最適化されたスケジューリング（CPU専用・ビルド安定版）
-#if ENABLE_GPU_PROCESSING
-	if (g_gpu_context && g_gpu_context->gpu_available)
-	{
-		// GPU実行
-		Var xi("xi"), yi("yi");
-		process.gpu_tile(x, y, xi, yi, 32, 8);
-		input_float.compute_root();
-		process.realize(output, g_gpu_context->gpu_target);
-	}
-	else
-#endif
-	{
-		// CPU実行（SIMD最適化とマルチスレッド）
-		process.parallel(y).vectorize(x, 8);
-		input_float.compute_root();
-		process.realize(output);
-	}
+	// 0, 0.25, 0.5, 0.75, 1 の5段階に量子化
+	float clamped = std::max(0.0f, std::min(1.0f, value));
+	return std::floor(clamped * 4.0f + 0.5f) * 0.25f;
 }
 
-// GPU処理のためのHalideパイプライン - Circle mode（最適化版・ビルド安定版）
-static void HalideProcessCircle(
-	const uint8_t *input_data,
-	uint8_t *output_data,
-	int width,
-	int height,
-	int input_stride,
-	int output_stride,
-	int anchor_x,
-	int anchor_y,
-	float downsample_x,
-	float downsample_y,
-	float radius,
-	uint8_t color_r,
-	uint8_t color_g,
-	uint8_t color_b,
-	bool aa_enabled)
+// ヘルパー関数: アルファブレンディング
+inline uint8_t BlendWithAlpha(float input_val, float target_val, float coverage, float alpha_factor)
 {
-	// 未使用パラメータの警告を抑制
-	(void)input_stride;
-	(void)output_stride;
-
-	// 入力バッファの作成（簡素化・安定性優先）
-	Buffer<uint8_t> input(const_cast<uint8_t *>(input_data), width, height, 4);
-	Buffer<uint8_t> output(output_data, width, height, 4);
-
-	// Halide変数定義
-	Var x("x"), y("y"), c("c");
-
-	// 入力をfloatに変換
-	Func input_float("input_float");
-	input_float(x, y, c) = cast<float>(input(x, y, c));
-
-	// メインの処理関数
-	Func process("process");
-
-	// 座標変換（計算を共通化）
-	Expr rx = cast<float>(x - anchor_x) * downsample_x;
-	Expr ry = cast<float>(y - anchor_y) * downsample_y;
-
-	// 距離計算（平方根を遅延評価して計算量削減）
-	Expr dist2 = rx * rx + ry * ry;
-	Expr r2 = radius * radius;
-
-	// アルファ値を取得（プレマルチプライド処理用）
-	Expr input_alpha = input_float(x, y, 3);
-	Expr alpha_factor = input_alpha / 255.0f;
-
-	if (!aa_enabled)
-	{
-		// アンチエイリアスなし（高速パス、平方根計算なし）
-		Expr in_region = dist2 <= r2;
-		Expr target_color = select(c == 0, cast<float>(color_r),
-								   c == 1, cast<float>(color_g),
-								   c == 2, cast<float>(color_b),
-								   input_alpha);
-
-		process(x, y, c) = select(
-			c == 3, cast<uint8_t>(input_alpha),							   // アルファチャンネルは維持
-			alpha_factor < 0.003921f, cast<uint8_t>(input_float(x, y, c)), // ほぼ透明（1/255未満）
-			in_region, cast<uint8_t>(target_color),
-			cast<uint8_t>(input_float(x, y, c)));
-	}
-	else
-	{
-		// 距離ベースのアンチエイリアス（解析的手法、5段階: 0, 0.25, 0.5, 0.75, 1）
-		Expr dist = sqrt(dist2);
-		Expr edge_width = 0.707f; // sqrt(2)/2 ピクセル境界の対角線幅
-		Expr signed_dist = (radius - dist) / edge_width;
-
-		// 5段階の離散化（0, 0.25, 0.5, 0.75, 1）
-		Expr clamped_dist = clamp(signed_dist, -1.0f, 1.0f);
-		Expr coverage_cont = (clamped_dist + 1.0f) * 0.5f; // [0, 1]
-
-		// 5段階に量子化（0, 0.25, 0.5, 0.75, 1）
-		Expr coverage_quantized = floor(coverage_cont * 4.0f + 0.5f) * 0.25f;
-		Expr coverage = clamp(coverage_quantized, 0.0f, 1.0f);
-
-		// アルファ値を考慮したブレンディング（プレマルチプライド）
-		Expr effective_coverage = coverage * alpha_factor;
-
-		// カラー値の計算（RGB）
-		Expr target_color = select(c == 0, cast<float>(color_r),
-								   c == 1, cast<float>(color_g),
-								   cast<float>(color_b));
-
-		// 最終的なブレンド（アルファ値も考慮）
-		process(x, y, c) = select(
-			c == 3, cast<uint8_t>(input_alpha),							   // アルファチャンネルは維持
-			alpha_factor < 0.003921f, cast<uint8_t>(input_float(x, y, c)), // ほぼ透明
-			cast<uint8_t>(input_float(x, y, c) * (1.0f - effective_coverage) +
-						  target_color * effective_coverage + 0.5f));
-	}
-
-	// 最適化されたスケジューリング（CPU専用・ビルド安定版）
-#if ENABLE_GPU_PROCESSING
-	if (g_gpu_context && g_gpu_context->gpu_available)
-	{
-		// GPU実行
-		Var xi("xi"), yi("yi");
-		process.gpu_tile(x, y, xi, yi, 32, 8);
-		input_float.compute_root();
-		process.realize(output, g_gpu_context->gpu_target);
-	}
-	else
-#endif
-	{
-		// CPU実行（SIMD最適化とマルチスレッド）
-		process.parallel(y).vectorize(x, 8);
-		input_float.compute_root();
-		process.realize(output);
-	}
+	float effective_coverage = coverage * alpha_factor;
+	float result = input_val * (1.0f - effective_coverage) + target_val * effective_coverage + 0.5f;
+	return static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, result)));
 }
 
 static PF_Err
@@ -321,14 +82,6 @@ GlobalSetup(
 	out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE;
 
 	out_data->out_flags2 |= PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
-
-#if ENABLE_GPU_PROCESSING
-	// GPUコンテキストの初期化（現在は無効）
-	if (!g_gpu_context)
-	{
-		g_gpu_context = std::make_unique<GPUContext>();
-	}
-#endif
 
 	return PF_Err_NONE;
 }
@@ -406,85 +159,13 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 
 	PF_Pixel color = params[ID_COLOR]->u.cd.value;
 
-	// GPU処理の試行（現在は無効）
-	bool use_gpu = false;
-#if ENABLE_GPU_PROCESSING
-	use_gpu = (g_gpu_context && g_gpu_context->gpu_available);
-#endif
-
-	if (use_gpu)
-	{
-		try
-		{
-			// GPU処理
-			int input_stride = input->rowbytes;
-			int output_stride = output->rowbytes;
-
-			if (mode == 1)
-			{
-				// Line mode
-				float cs = cosf(angle);
-				float sn = sinf(angle);
-				HalideProcessLine(
-					reinterpret_cast<const uint8_t *>(input_pixels),
-					reinterpret_cast<uint8_t *>(output_pixels),
-					width,
-					height,
-					input_stride,
-					output_stride,
-					anchor_x,
-					anchor_y,
-					downsample_x,
-					downsample_y,
-					cs,
-					sn,
-					color.red,
-					color.green,
-					color.blue,
-					aaEnabled);
-			}
-			else
-			{
-				// Circle mode
-				HalideProcessCircle(
-					reinterpret_cast<const uint8_t *>(input_pixels),
-					reinterpret_cast<uint8_t *>(output_pixels),
-					width,
-					height,
-					input_stride,
-					output_stride,
-					anchor_x,
-					anchor_y,
-					downsample_x,
-					downsample_y,
-					radius,
-					color.red,
-					color.green,
-					color.blue,
-					aaEnabled);
-			}
-
-			return PF_Err_NONE;
-		}
-		catch (...)
-		{
-			// GPU処理失敗時はCPUフォールバック
-			use_gpu = false;
-		}
-	}
-
-	// CPU処理（フォールバックまたはGPU無効時）
-
-	const float subOffsets[4][2] = {
-		{-0.25f, -0.25f},
-		{0.25f, -0.25f},
-		{-0.25f, 0.25f},
-		{0.25f, 0.25f}};
-
+	// 最適化された処理
 	if (mode == 1)
 	{
+		// Line mode - 最適化版
 		float cs = cosf(angle);
 		float sn = sinf(angle);
+
 		for (int y = 0; y < height; y++)
 		{
 			for (int x = 0; x < width; x++)
@@ -493,16 +174,21 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 				int output_index = y * (output->rowbytes / sizeof(PF_Pixel)) + x;
 				PF_Pixel input_pixel = input_pixels[input_index];
 				PF_Pixel *output_pixel = &output_pixels[output_index];
+
+				// アルファ値チェック
 				if (input_pixel.alpha == 0)
 				{
 					*output_pixel = input_pixel;
 					continue;
 				}
+
 				float rx = (x - anchor_x) * downsample_x;
 				float ry = (y - anchor_y) * downsample_y;
+				float rotated_x = rx * cs + ry * sn;
+
 				if (!aaEnabled)
 				{
-					float rotated_x = rx * cs + ry * sn;
+					// アンチエイリアスなし
 					if (rotated_x > 0.0f)
 					{
 						output_pixel->red = color.red;
@@ -517,16 +203,15 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 				}
 				else
 				{
-					int hits = 0;
-					for (int s = 0; s < 4; ++s)
-					{
-						float sx = rx + subOffsets[s][0];
-						float sy = ry + subOffsets[s][1];
-						float rxx = sx * cs + sy * sn;
-						if (rxx > 0.0f)
-							++hits;
-					}
-					float coverage = hits / 4.0f;
+					// 解析的アンチエイリアス（5段階量子化）
+					const float edge_width = 0.707f;
+					float signed_dist = rotated_x / edge_width;
+					float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
+					float coverage_cont = (clamped_dist + 1.0f) * 0.5f;
+					float coverage = Quantize5Levels(coverage_cont);
+
+					float alpha_factor = input_pixel.alpha / 255.0f;
+
 					if (coverage <= 0.0f)
 					{
 						*output_pixel = input_pixel;
@@ -540,9 +225,9 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 					}
 					else
 					{
-						output_pixel->red = static_cast<A_u_char>(input_pixel.red * (1.0f - coverage) + color.red * coverage + 0.5f);
-						output_pixel->green = static_cast<A_u_char>(input_pixel.green * (1.0f - coverage) + color.green * coverage + 0.5f);
-						output_pixel->blue = static_cast<A_u_char>(input_pixel.blue * (1.0f - coverage) + color.blue * coverage + 0.5f);
+						output_pixel->red = BlendWithAlpha(input_pixel.red, color.red, coverage, alpha_factor);
+						output_pixel->green = BlendWithAlpha(input_pixel.green, color.green, coverage, alpha_factor);
+						output_pixel->blue = BlendWithAlpha(input_pixel.blue, color.blue, coverage, alpha_factor);
 						output_pixel->alpha = input_pixel.alpha;
 					}
 				}
@@ -551,6 +236,9 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 	}
 	else
 	{
+		// Circle mode - 最適化版
+		float r2 = radius * radius;
+
 		for (int y = 0; y < height; y++)
 		{
 			for (int x = 0; x < width; x++)
@@ -559,17 +247,22 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 				int output_index = y * (output->rowbytes / sizeof(PF_Pixel)) + x;
 				PF_Pixel input_pixel = input_pixels[input_index];
 				PF_Pixel *output_pixel = &output_pixels[output_index];
+
+				// アルファ値チェック
 				if (input_pixel.alpha == 0)
 				{
 					*output_pixel = input_pixel;
 					continue;
 				}
+
 				float rx = (x - anchor_x) * downsample_x;
 				float ry = (y - anchor_y) * downsample_y;
+				float dist2 = rx * rx + ry * ry;
+
 				if (!aaEnabled)
 				{
-					float dist2 = rx * rx + ry * ry;
-					if (dist2 <= radius * radius)
+					// アンチエイリアスなし（平方根計算不要）
+					if (dist2 <= r2)
 					{
 						output_pixel->red = color.red;
 						output_pixel->green = color.green;
@@ -583,17 +276,16 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 				}
 				else
 				{
-					int hits = 0;
-					float r2 = radius * radius;
-					for (int s = 0; s < 4; ++s)
-					{
-						float sx = rx + subOffsets[s][0];
-						float sy = ry + subOffsets[s][1];
-						float d2 = sx * sx + sy * sy;
-						if (d2 <= r2)
-							++hits;
-					}
-					float coverage = hits / 4.0f;
+					// 解析的アンチエイリアス（5段階量子化）
+					float dist = sqrtf(dist2);
+					const float edge_width = 0.707f;
+					float signed_dist = (radius - dist) / edge_width;
+					float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
+					float coverage_cont = (clamped_dist + 1.0f) * 0.5f;
+					float coverage = Quantize5Levels(coverage_cont);
+
+					float alpha_factor = input_pixel.alpha / 255.0f;
+
 					if (coverage <= 0.0f)
 					{
 						*output_pixel = input_pixel;
@@ -607,9 +299,9 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 					}
 					else
 					{
-						output_pixel->red = static_cast<A_u_char>(input_pixel.red * (1.0f - coverage) + color.red * coverage + 0.5f);
-						output_pixel->green = static_cast<A_u_char>(input_pixel.green * (1.0f - coverage) + color.green * coverage + 0.5f);
-						output_pixel->blue = static_cast<A_u_char>(input_pixel.blue * (1.0f - coverage) + color.blue * coverage + 0.5f);
+						output_pixel->red = BlendWithAlpha(input_pixel.red, color.red, coverage, alpha_factor);
+						output_pixel->green = BlendWithAlpha(input_pixel.green, color.green, coverage, alpha_factor);
+						output_pixel->blue = BlendWithAlpha(input_pixel.blue, color.blue, coverage, alpha_factor);
 						output_pixel->alpha = input_pixel.alpha;
 					}
 				}
