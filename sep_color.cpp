@@ -8,15 +8,14 @@
 #include <vector>
 
 /**
- * パフォーマンス最適化の概要（超高速化版 + 全ビット深度対応）:
+ * パフォーマンス最適化の概要（超高速化版 + ビット深度対応）:
  *
- * 0. 全ビット深度対応（NEW!）
+ * 0. ビット深度対応（NEW!）
  *    - 8-bit (PF_Pixel: 0-255)
  *    - 16-bit (PF_Pixel16: 0-32768)
- *    - 32-bit float (PF_PixelFloat: 0.0-1.0)
  *    - テンプレート特殊化（PixelTraits）によるゼロオーバーヘッド実装
- *    - PF_WorldSuite2による正確なフォーマット判定
- *    → HDR、リニアワークフロー、カラーグレーディングに完全対応
+ *    - PF_WORLD_IS_DEEPマクロによるシンプルな判定
+ *    → 高品質VFX、カラーグレーディングに対応
  *
  * 1. マルチスレッド並列処理
  *    - CPUコア数に応じた自動並列化（hardware_concurrency()）
@@ -49,7 +48,7 @@
  * 期待される性能（Release build）:
  *    - 1920x1080, 8コア: 3-6ms（30-40ms → 3-6ms = 約85-90%削減）
  *    - 3840x2160, 8コア: 10-15ms（120-160ms → 10-15ms = 約87-92%削減）
- *    - 総合効果: 10-15倍高速化（全ビット深度で同等の性能）
+ *    - 総合効果: 10-15倍高速化（8-bit、16-bitで同等の性能）
  *
  * 参考: After Effects標準アンチエイリアス、Intel GPU最適化手法、FXAA技術
  */
@@ -132,7 +131,8 @@ struct PixelTraits<PF_Pixel16>
 	}
 };
 
-// ピクセル型の特性（32-bit float）
+// 32-bit floatサポート（PF_PixelFloatが利用可能な場合）
+#ifdef PF_PixelFloat
 template <>
 struct PixelTraits<PF_PixelFloat>
 {
@@ -160,10 +160,10 @@ struct PixelTraits<PF_PixelFloat>
 
 	static inline float ConvertFromU8(A_u_char val)
 	{
-		// 8-bit → 32-bit float: 正規化 (0-1の範囲)
 		return val / 255.0f;
 	}
 };
+#endif
 
 static PF_Err
 About(
@@ -199,10 +199,9 @@ GlobalSetup(
 		STAGE_VERSION,
 		BUILD_VERSION);
 
-	// 8-bit, 16-bit, 32-bit float 全対応
+	// 8-bit, 16-bit 対応
 	out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE;
 	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_THREADED_RENDERING |
-						   PF_OutFlag2_FLOAT_COLOR_AWARE |
 						   PF_OutFlag2_SUPPORTS_SMART_RENDER;
 
 	return PF_Err_NONE;
@@ -504,70 +503,20 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 
 	PF_EffectWorld *input = &params[0]->u.ld;
 
-	// ビット深度判定（シンプルな方法）
-	PF_PixelFormat format = PF_PixelFormat_INVALID;
-	AEFX_SuiteScoper<PF_WorldSuite2> wsP(in_data, kPFWorldSuite, kPFWorldSuiteVersion2, out_data);
-
-	err = wsP->PF_GetPixelFormat(output, &format);
-
-	if (err == PF_Err_NONE)
+	// ビット深度判定
+	if (PF_WORLD_IS_DEEP(output))
 	{
-		switch (format)
-		{
-		case PF_PixelFormat_ARGB32:
-			// 8-bit
-			{
-				PF_Pixel *input_pixels = (PF_Pixel *)input->data;
-				PF_Pixel *output_pixels = (PF_Pixel *)output->data;
-				err = RenderTemplate<PF_Pixel>(in_data, out_data, params, output, input_pixels, output_pixels);
-			}
-			break;
-
-		case PF_PixelFormat_ARGB64:
-			// 16-bit
-			{
-				PF_Pixel16 *input_pixels = (PF_Pixel16 *)input->data;
-				PF_Pixel16 *output_pixels = (PF_Pixel16 *)output->data;
-				err = RenderTemplate<PF_Pixel16>(in_data, out_data, params, output, input_pixels, output_pixels);
-			}
-			break;
-
-		case PF_PixelFormat_ARGB128:
-			// 32-bit float
-			{
-				PF_PixelFloat *input_pixels = (PF_PixelFloat *)input->data;
-				PF_PixelFloat *output_pixels = (PF_PixelFloat *)output->data;
-				err = RenderTemplate<PF_PixelFloat>(in_data, out_data, params, output, input_pixels, output_pixels);
-			}
-			break;
-
-		default:
-			// デフォルトは8-bit
-			{
-				PF_Pixel *input_pixels = (PF_Pixel *)input->data;
-				PF_Pixel *output_pixels = (PF_Pixel *)output->data;
-				err = RenderTemplate<PF_Pixel>(in_data, out_data, params, output, input_pixels, output_pixels);
-			}
-			break;
-		}
+		// 16-bit
+		PF_Pixel16 *input_pixels = (PF_Pixel16 *)input->data;
+		PF_Pixel16 *output_pixels = (PF_Pixel16 *)output->data;
+		err = RenderTemplate<PF_Pixel16>(in_data, out_data, params, output, input_pixels, output_pixels);
 	}
 	else
 	{
-		// フォールバック: PF_WORLD_IS_DEEP を使用
-		if (PF_WORLD_IS_DEEP(output))
-		{
-			// 16-bit
-			PF_Pixel16 *input_pixels = (PF_Pixel16 *)input->data;
-			PF_Pixel16 *output_pixels = (PF_Pixel16 *)output->data;
-			err = RenderTemplate<PF_Pixel16>(in_data, out_data, params, output, input_pixels, output_pixels);
-		}
-		else
-		{
-			// 8-bit
-			PF_Pixel *input_pixels = (PF_Pixel *)input->data;
-			PF_Pixel *output_pixels = (PF_Pixel *)output->data;
-			err = RenderTemplate<PF_Pixel>(in_data, out_data, params, output, input_pixels, output_pixels);
-		}
+		// 8-bit
+		PF_Pixel *input_pixels = (PF_Pixel *)input->data;
+		PF_Pixel *output_pixels = (PF_Pixel *)output->data;
+		err = RenderTemplate<PF_Pixel>(in_data, out_data, params, output, input_pixels, output_pixels);
 	}
 
 	return err;
