@@ -814,8 +814,20 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 		// 32-bit floatか8-bitかを判定
 		// 32-bit floatの場合、1ピクセルあたり16バイト（4チャンネル × 4バイト）
 		// 8-bitの場合、1ピクセルあたり4バイト（4チャンネル × 1バイト）
-		int bytes_per_pixel = output->rowbytes / output->width;
-		if (bytes_per_pixel >= 16)
+		// widthが0の場合は8-bitとして処理
+		bool is_32bit_float = false;
+		if (output->width > 0 && output->rowbytes > 0)
+		{
+			// rowbytesをwidthで割って、1ピクセルあたりのバイト数を計算
+			// パディングを考慮して、16バイト以上なら32-bit floatと判定
+			A_long bytes_per_pixel = output->rowbytes / output->width;
+			if (bytes_per_pixel >= 16)
+			{
+				is_32bit_float = true;
+			}
+		}
+
+		if (is_32bit_float)
 		{
 			// 32-bit float処理
 			PF_PixelFloat *input_pixels = reinterpret_cast<PF_PixelFloat *>(input->data);
