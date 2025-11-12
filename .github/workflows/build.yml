@@ -81,42 +81,56 @@ jobs:
 
       - name: Verify Git LFS files
         shell: bash
-        continue-on-error: true
         run: |
           echo "Verifying Git LFS files..."
           git lfs ls-files || echo "Warning: git lfs ls-files failed"
           echo "Checking for LFS files..."
-          if [ -f "third_party/halide/win/lib/Halide.lib" ]; then
-            FILE_SIZE=$(ls -lh third_party/halide/win/lib/Halide.lib | awk '{print $5}')
-            if [ "$FILE_SIZE" != "0" ] && [ -s "third_party/halide/win/lib/Halide.lib" ]; then
-              echo "✓ Halide.lib found ($FILE_SIZE)"
-            else
-              echo "⚠ Halide.lib found but appears to be a pointer file (LFS not fetched)"
+          
+          # LFSファイルがポインタファイルかどうかをチェックする関数
+          check_lfs_file() {
+            local file_path=$1
+            local file_name=$2
+            
+            if [ ! -f "$file_path" ]; then
+              echo "::error::LFS file not found: $file_name"
+              return 1
             fi
-          else
-            echo "⚠ Halide.lib not found"
-          fi
-          if [ -f "third_party/halide/win/bin/Halide.dll" ]; then
-            FILE_SIZE=$(ls -lh third_party/halide/win/bin/Halide.dll | awk '{print $5}')
-            if [ "$FILE_SIZE" != "0" ] && [ -s "third_party/halide/win/bin/Halide.dll" ]; then
-              echo "✓ Halide.dll found ($FILE_SIZE)"
-            else
-              echo "⚠ Halide.dll found but appears to be a pointer file (LFS not fetched)"
+            
+            # ポインタファイルかどうかをチェック（最初の行が "version https://git-lfs.github.com/spec/v1" かどうか）
+            if head -n 1 "$file_path" | grep -q "version https://git-lfs.github.com/spec/v1"; then
+              echo "::error::LFS file is still a pointer file (not fetched): $file_name"
+              echo "::error::LFS budget exceeded. Please increase LFS budget or clean up old LFS files."
+              return 1
             fi
-          else
-            echo "⚠ Halide.dll not found"
-          fi
-          if [ -f "third_party/halide/mac/lib/libHalide.21.0.0.dylib" ]; then
-            FILE_SIZE=$(ls -lh third_party/halide/mac/lib/libHalide.21.0.0.dylib | awk '{print $5}')
-            if [ "$FILE_SIZE" != "0" ] && [ -s "third_party/halide/mac/lib/libHalide.21.0.0.dylib" ]; then
-              echo "✓ libHalide.21.0.0.dylib found ($FILE_SIZE)"
+            
+            FILE_SIZE=$(ls -lh "$file_path" | awk '{print $5}')
+            if [ -s "$file_path" ]; then
+              echo "✓ $file_name found ($FILE_SIZE)"
+              return 0
             else
-              echo "⚠ libHalide.21.0.0.dylib found but appears to be a pointer file (LFS not fetched)"
+              echo "::error::LFS file is empty: $file_name"
+              return 1
             fi
-          else
-            echo "⚠ libHalide.21.0.0.dylib not found"
+          }
+          
+          # プラットフォームに応じて必要なLFSファイルをチェック
+          LFS_ERROR=0
+          if [ "${{ matrix.platform }}" == "win" ]; then
+            check_lfs_file "third_party/halide/win/lib/Halide.lib" "Halide.lib" || LFS_ERROR=1
+            check_lfs_file "third_party/halide/win/bin/Halide.dll" "Halide.dll" || LFS_ERROR=1
+          elif [ "${{ matrix.platform }}" == "mac" ]; then
+            check_lfs_file "third_party/halide/mac/lib/libHalide.21.0.0.dylib" "libHalide.21.0.0.dylib" || LFS_ERROR=1
           fi
-          echo "::warning::If LFS files are not available, the build may fail. Consider increasing LFS budget or using alternative storage."
+          
+          if [ $LFS_ERROR -ne 0 ]; then
+            echo "::error::Required LFS files are not available. Build cannot continue."
+            echo "::error::Please run the cleanup script to free up LFS storage:"
+            echo "::error::  .\scripts\cleanup_lfs_remote.ps1  (Windows)"
+            echo "::error::  ./scripts/cleanup_lfs_remote.sh   (Linux/macOS)"
+            exit 1
+          fi
+          
+          echo "All required LFS files are available."
 
       - name: Set up Xcode (Mac)
         if: matrix.platform == 'mac'
