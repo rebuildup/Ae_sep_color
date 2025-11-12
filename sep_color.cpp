@@ -155,9 +155,7 @@ static PF_Err ParamsSetup(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef 
 		ID_RADIUS);
 
 	PF_ADD_COLOR("Color", 255, 0, 0, ID_COLOR);
-	// 実際に追加したパラメータ数（ID_INPUTを除く）
-	// ID_ANCHOR_POINT, ID_MODE, ID_ANGLE, ID_RADIUS, ID_COLOR = 5つ
-	out_data->num_params = 6; // ID_INPUTを含めた総数
+	out_data->num_params = SKELETON_NUM_PARAMS;
 	return PF_Err_NONE;
 }
 
