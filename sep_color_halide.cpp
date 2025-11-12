@@ -1,5 +1,7 @@
 #include "sep_color_halide.h"
 
+#include <cmath>
+
 #if SEP_COLOR_ENABLE_HALIDE
 #include "third_party/halide/include/Halide.h"
 using namespace Halide;
@@ -23,7 +25,7 @@ bool SepColorHalide_Render8(PF_InData *in_data,
     const int ax = (params[ID_ANCHOR_POINT]->u.td.x_value >> 16);
     const int ay = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
     float angle_param_value = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16);
-    angle_param_value = fmodf(angle_param_value, 360.0f);
+    angle_param_value = std::fmod(angle_param_value, 360.0f);
     const float pi_f = 3.14159265358979323846f;
     const float ang = angle_param_value * (pi_f / 180.0f);
     const float radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
