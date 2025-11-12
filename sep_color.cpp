@@ -1295,14 +1295,17 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 	return err;
 }
 
-extern "C" DllExport
-	PF_Err
-	PluginDataEntryFunction2(
-		PF_PluginDataPtr inPtr,
-		PF_PluginDataCB2 inPluginDataCallBackPtr,
-		SPBasicSuite *inSPBasicSuitePtr,
-		const char *inHostName,
-		const char *inHostVersion)
+extern "C" {
+#ifdef AE_OS_WIN
+__declspec(dllexport)
+#endif
+PF_Err
+PluginDataEntryFunction2(
+	PF_PluginDataPtr inPtr,
+	PF_PluginDataCB2 inPluginDataCallBackPtr,
+	SPBasicSuite *inSPBasicSuitePtr,
+	const char *inHostName,
+	const char *inHostVersion)
 {
 	PF_Err result = PF_Err_INVALID_CALLBACK;
 
@@ -1312,11 +1315,12 @@ extern "C" DllExport
 		"sep_color",				  // Name
 		"361do sep_color",			  // Match Name
 		"361do_plugins",			  // Category
-		AE_RESERVED_INFO,			  // Reserved Info
+		0,							  // Reserved Info (must match PiPL)
 		"EffectMain",				  // Entry point
 		"https://x.com/361do_sleep"); // support URL
 
 	return result;
+}
 }
 
 // -------------------------------------------------------------
@@ -1855,7 +1859,10 @@ static PF_Err Render32Fast(
 	return err;
 }
 
-extern "C" DllExport
+extern "C" {
+#ifdef AE_OS_WIN
+__declspec(dllexport)
+#endif
 PF_Err
 EffectMain(
 	PF_Cmd cmd,
@@ -1889,6 +1896,7 @@ EffectMain(
 		err = thrown_err;
 	}
 	return err;
+}
 }
 
 // -------------------------------------------------------------
