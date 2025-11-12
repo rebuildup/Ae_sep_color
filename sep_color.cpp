@@ -903,6 +903,7 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 	PF_EffectWorld *input = &params[0]->u.ld;
 
 	// ビット深度に応じて適切なレンダリング関数を呼び出す
+	// PF_WORLD_IS_DEEPで16-bitを判定、それ以外はrowbytesで32-bit floatを判定
 	if (PF_WORLD_IS_DEEP(output))
 	{
 		// 16-bit処理
@@ -910,19 +911,26 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 		PF_Pixel16 *output_pixels = reinterpret_cast<PF_Pixel16 *>(output->data);
 		err = Render16(in_data, out_data, params, output, input_pixels, output_pixels);
 	}
-	else if (PF_WORLD_IS_HI(output))
-	{
-		// 32-bit float処理
-		PF_PixelFloat *input_pixels = reinterpret_cast<PF_PixelFloat *>(input->data);
-		PF_PixelFloat *output_pixels = reinterpret_cast<PF_PixelFloat *>(output->data);
-		err = Render32(in_data, out_data, params, output, input_pixels, output_pixels);
-	}
 	else
 	{
-		// 8-bit処理
-		PF_Pixel *input_pixels = reinterpret_cast<PF_Pixel *>(input->data);
-		PF_Pixel *output_pixels = reinterpret_cast<PF_Pixel *>(output->data);
-		err = Render8(in_data, out_data, params, output, input_pixels, output_pixels);
+		// 32-bit floatか8-bitかを判定
+		// 32-bit floatの場合、1ピクセルあたり16バイト（4チャンネル × 4バイト）
+		// 8-bitの場合、1ピクセルあたり4バイト（4チャンネル × 1バイト）
+		int bytes_per_pixel = output->rowbytes / output->width;
+		if (bytes_per_pixel >= 16)
+		{
+			// 32-bit float処理
+			PF_PixelFloat *input_pixels = reinterpret_cast<PF_PixelFloat *>(input->data);
+			PF_PixelFloat *output_pixels = reinterpret_cast<PF_PixelFloat *>(output->data);
+			err = Render32(in_data, out_data, params, output, input_pixels, output_pixels);
+		}
+		else
+		{
+			// 8-bit処理（デフォルト）
+			PF_Pixel *input_pixels = reinterpret_cast<PF_Pixel *>(input->data);
+			PF_Pixel *output_pixels = reinterpret_cast<PF_Pixel *>(output->data);
+			err = Render8(in_data, out_data, params, output, input_pixels, output_pixels);
+		}
 	}
 
 	return err;
