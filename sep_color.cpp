@@ -1,4 +1,5 @@
 #include "sep_color.h"
+#include "sep_color.h"
 #include "sep_color_Strings.h"
 
 #include <algorithm>
@@ -7,6 +8,21 @@
 #include <thread>
 #include <vector>
 #include <cstring>
+#include "sep_color_halide.h"
+
+// Feature switches (safe defaults). Toggle in project C/C++ Preprocessor Definitions if needed.
+#ifndef SEP_COLOR_USE_PF_ITERATE
+#define SEP_COLOR_USE_PF_ITERATE 0
+#endif
+#ifndef SEP_COLOR_ENABLE_HALIDE
+#define SEP_COLOR_ENABLE_HALIDE 0
+#endif
+#ifndef SEP_COLOR_FAST_SQRT
+#define SEP_COLOR_FAST_SQRT 0
+#endif
+#ifndef SEP_COLOR_USE_BASELINE
+#define SEP_COLOR_USE_BASELINE 0
+#endif
 #include "sep_color_halide.h"
 
 // (forward declarations moved below with other fast paths)
@@ -205,6 +221,156 @@ static PF_Err Render8Iterate(
         output);
     return err;
 }
+
+#if SEP_COLOR_USE_PF_ITERATE
+// 16-bit iterate helpers
+struct IterateRefcon
+{
+    int width, height;
+    int anchor_x, anchor_y;
+    float downsample_x, downsample_y;
+    float angle, radius;
+    int mode; // 1: Line, 2: Circle
+    float edge_width, inv_edge_width;
+    PF_Pixel color8;
+};
+
+static PF_Err IteratePix16(void *refcon, A_long x, A_long y, PF_Pixel16 *in, PF_Pixel16 *out)
+{
+    const IterateRefcon *rc = reinterpret_cast<const IterateRefcon *>(refcon);
+    if (in->alpha == 0) { *out = *in; return PF_Err_NONE; }
+    const float fx = (static_cast<float>(x) - rc->anchor_x) * rc->downsample_x;
+    const float fy = (static_cast<float>(y) - rc->anchor_y) * rc->downsample_y;
+    float coverage;
+    if (rc->mode == 1)
+    {
+        const float cs = cosf(rc->angle), sn = sinf(rc->angle);
+        const float rot_x = fx * cs + fy * sn;
+        const float sd = rot_x * rc->inv_edge_width;
+        coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+    }
+    else
+    {
+        const float dist = sqrtf(fx * fx + fy * fy);
+        const float sd = (rc->radius - dist) * rc->inv_edge_width;
+        coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+    }
+    if (coverage <= 0.0001f) { *out = *in; return PF_Err_NONE; }
+    const A_u_short r = static_cast<A_u_short>((rc->color8.red   * 32768 + 127) / 255);
+    const A_u_short g = static_cast<A_u_short>((rc->color8.green * 32768 + 127) / 255);
+    const A_u_short b = static_cast<A_u_short>((rc->color8.blue  * 32768 + 127) / 255);
+    if (coverage >= 0.9999f) { out->red = r; out->green = g; out->blue = b; out->alpha = in->alpha; return PF_Err_NONE; }
+    const float ca = coverage * (static_cast<float>(in->alpha) * INV_32768);
+    out->red = FastBlend16(in->red, r, ca);
+    out->green = FastBlend16(in->green, g, ca);
+    out->blue = FastBlend16(in->blue, b, ca);
+    out->alpha = in->alpha;
+    return PF_Err_NONE;
+}
+
+static PF_Err Render16Iterate(
+    PF_InData *in_data,
+    PF_OutData *out_data,
+    PF_ParamDef *params[],
+    PF_LayerDef *output,
+    PF_Pixel16 *input_pixels,
+    PF_Pixel16 *output_pixels)
+{
+    (void)out_data; (void)input_pixels; (void)output_pixels;
+    IterateRefcon rc{};
+    rc.width = output->width; rc.height = output->height;
+    rc.downsample_x = static_cast<float>(in_data->downsample_x.den) / static_cast<float>(in_data->downsample_x.num);
+    rc.downsample_y = static_cast<float>(in_data->downsample_y.den) / static_cast<float>(in_data->downsample_y.num);
+    rc.anchor_x = (params[ID_ANCHOR_POINT]->u.td.x_value >> 16);
+    rc.anchor_y = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
+    rc.angle = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16) * (3.14159265358979323846f / 180.0f);
+    rc.radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
+    rc.mode = params[ID_MODE]->u.pd.value;
+    rc.edge_width = 0.707f; rc.inv_edge_width = 1.0f / rc.edge_width;
+    rc.color8 = params[ID_COLOR]->u.cd.value;
+
+    AEGP_SuiteHandler suites(in_data->pica_basicP);
+    PF_Rect area{ 0, 0, output->width, output->height };
+    PF_EffectWorld *src = &params[0]->u.ld;
+    return suites.Iterate16Suite1()->iterate(
+        in_data,
+        0,
+        output->height,
+        src,
+        &area,
+        &rc,
+        IteratePix16,
+        output);
+}
+
+static PF_Err IteratePix32(void *refcon, A_long x, A_long y, PF_PixelFloat *in, PF_PixelFloat *out)
+{
+    const IterateRefcon *rc = reinterpret_cast<const IterateRefcon *>(refcon);
+    if (in->alpha <= 0.0f) { *out = *in; return PF_Err_NONE; }
+    const float fx = (static_cast<float>(x) - rc->anchor_x) * rc->downsample_x;
+    const float fy = (static_cast<float>(y) - rc->anchor_y) * rc->downsample_y;
+    float coverage;
+    if (rc->mode == 1)
+    {
+        const float cs = cosf(rc->angle), sn = sinf(rc->angle);
+        const float rot_x = fx * cs + fy * sn;
+        const float sd = rot_x * rc->inv_edge_width;
+        coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+    }
+    else
+    {
+        const float dist = sqrtf(fx * fx + fy * fy);
+        const float sd = (rc->radius - dist) * rc->inv_edge_width;
+        coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+    }
+    if (coverage <= 0.0001f) { *out = *in; return PF_Err_NONE; }
+    const float r = static_cast<float>(rc->color8.red) * INV_255;
+    const float g = static_cast<float>(rc->color8.green) * INV_255;
+    const float b = static_cast<float>(rc->color8.blue) * INV_255;
+    if (coverage >= 0.9999f) { out->red = r; out->green = g; out->blue = b; out->alpha = in->alpha; return PF_Err_NONE; }
+    const float ca = coverage * in->alpha;
+    out->red = FastBlendFloat(in->red, r, ca);
+    out->green = FastBlendFloat(in->green, g, ca);
+    out->blue = FastBlendFloat(in->blue, b, ca);
+    out->alpha = in->alpha;
+    return PF_Err_NONE;
+}
+
+static PF_Err Render32Iterate(
+    PF_InData *in_data,
+    PF_OutData *out_data,
+    PF_ParamDef *params[],
+    PF_LayerDef *output,
+    PF_PixelFloat *input_pixels,
+    PF_PixelFloat *output_pixels)
+{
+    (void)out_data; (void)input_pixels; (void)output_pixels;
+    IterateRefcon rc{};
+    rc.width = output->width; rc.height = output->height;
+    rc.downsample_x = static_cast<float>(in_data->downsample_x.den) / static_cast<float>(in_data->downsample_x.num);
+    rc.downsample_y = static_cast<float>(in_data->downsample_y.den) / static_cast<float>(in_data->downsample_y.num);
+    rc.anchor_x = (params[ID_ANCHOR_POINT]->u.td.x_value >> 16);
+    rc.anchor_y = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
+    rc.angle = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16) * (3.14159265358979323846f / 180.0f);
+    rc.radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
+    rc.mode = params[ID_MODE]->u.pd.value;
+    rc.edge_width = 0.707f; rc.inv_edge_width = 1.0f / rc.edge_width;
+    rc.color8 = params[ID_COLOR]->u.cd.value;
+
+    AEGP_SuiteHandler suites(in_data->pica_basicP);
+    PF_Rect area{ 0, 0, output->width, output->height };
+    PF_EffectWorld *src = &params[0]->u.ld;
+    return suites.IterateFloatSuite1()->iterate(
+        in_data,
+        0,
+        output->height,
+        src,
+        &area,
+        &rc,
+        IteratePix32,
+        output);
+}
+#endif // SEP_COLOR_USE_PF_ITERATE
 #endif // SEP_COLOR_USE_PF_ITERATE
 
 static PF_Err
@@ -940,7 +1106,22 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 		// 16-bit処理
 		PF_Pixel16 *input_pixels = reinterpret_cast<PF_Pixel16 *>(input->data);
 		PF_Pixel16 *output_pixels = reinterpret_cast<PF_Pixel16 *>(output->data);
+#if SEP_COLOR_USE_BASELINE
+			err = Render16(in_data, out_data, params, output, input_pixels, output_pixels);
+#elif SEP_COLOR_ENABLE_HALIDE
+			if (!SepColorHalide_Render16(in_data, out_data, params, output, input_pixels, output_pixels))
+			{
+#if SEP_COLOR_USE_PF_ITERATE
+				err = Render16Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
+#else
+				err = Render16Fast(in_data, out_data, params, output, input_pixels, output_pixels);
+#endif
+			}
+#elif SEP_COLOR_USE_PF_ITERATE
+			err = Render16Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
+#else
 			err = Render16Fast(in_data, out_data, params, output, input_pixels, output_pixels);
+#endif
 	}
 	else
 	{
@@ -965,14 +1146,44 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 			// 32-bit float処理
 			PF_PixelFloat *input_pixels = reinterpret_cast<PF_PixelFloat *>(input->data);
 			PF_PixelFloat *output_pixels = reinterpret_cast<PF_PixelFloat *>(output->data);
+#if SEP_COLOR_USE_BASELINE
+			err = Render32(in_data, out_data, params, output, input_pixels, output_pixels);
+#elif SEP_COLOR_ENABLE_HALIDE
+			if (!SepColorHalide_Render32(in_data, out_data, params, output, input_pixels, output_pixels))
+			{
+#if SEP_COLOR_USE_PF_ITERATE
+				err = Render32Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
+#else
+				err = Render32Fast(in_data, out_data, params, output, input_pixels, output_pixels);
+#endif
+			}
+#elif SEP_COLOR_USE_PF_ITERATE
+			err = Render32Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
+#else
 			err = Render32Fast(in_data, out_data, params, output, input_pixels, output_pixels);
+#endif
 		}
 		else
 		{
 			// 8-bit処理（デフォルト）
 			PF_Pixel *input_pixels = reinterpret_cast<PF_Pixel *>(input->data);
 			PF_Pixel *output_pixels = reinterpret_cast<PF_Pixel *>(output->data);
+#if SEP_COLOR_USE_BASELINE
+			err = Render8(in_data, out_data, params, output, input_pixels, output_pixels);
+#elif SEP_COLOR_ENABLE_HALIDE
+			if (!SepColorHalide_Render8(in_data, out_data, params, output, input_pixels, output_pixels))
+			{
+#if SEP_COLOR_USE_PF_ITERATE
+				err = Render8Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
+#else
+				err = Render8Fast(in_data, out_data, params, output, input_pixels, output_pixels);
+#endif
+			}
+#elif SEP_COLOR_USE_PF_ITERATE
+			err = Render8Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
+#else
 			err = Render8Fast(in_data, out_data, params, output, input_pixels, output_pixels);
+#endif
 		}
 	}
 
@@ -1797,6 +2008,7 @@ static PF_Err Render8Fast(
 
 	return err;
 }
+
 
 
 

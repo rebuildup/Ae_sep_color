@@ -83,13 +83,27 @@ bool SepColorHalide_Render8(PF_InData *in_data,
     out(x, y, 2) = cast<uint8_t>(b_src + (b_dst - b_src) * cov_a + 0.5f);
     out(x, y, 3) = in_buf(x, y, 3);
 
+    // Schedule
+#ifdef SEP_COLOR_HALIDE_GPU
+    Target t = get_host_target();
+#if defined(_WIN32)
+    t.set_feature(Target::D3D12Compute);
+#else
+    t.set_feature(Target::Metal);
+#endif
+    out.bound(c, 0, 4).reorder(c, x, y);
+    Var xi("xi"), yi("yi");
+    out.gpu_tile(x, y, xi, yi, 16, 16);
+    coverage.compute_at(out, x).gpu_threads(x);
+    out.compile_jit(t);
+    out.realize(out_buf, t);
+#else
     // CPU schedule: vectorize x, parallelize y
     out.bound(c, 0, 4).reorder(c, x, y);
     out.vectorize(x, 16).parallel(y, 8);
     coverage.compute_at(out, y).vectorize(x, 16);
-
-    // Realize directly into out_buf
     out.realize(out_buf);
+#endif
     return true;
 #else
     (void)in_data; (void)out_data; (void)params; (void)output; (void)input_pixels; (void)output_pixels;
@@ -130,4 +144,3 @@ bool SepColorHalide_Render32(PF_InData *in_data,
     return false;
 #endif
 }
-
