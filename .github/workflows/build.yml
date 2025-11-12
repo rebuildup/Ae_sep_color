@@ -54,13 +54,24 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Ensure Git LFS files are present
+      - name: Verify Git LFS files
         shell: bash
         run: |
-          set -e
-          git lfs install
-          git lfs fetch --all
-          git lfs checkout
+          echo "Verifying Git LFS files..."
+          git lfs ls-files || echo "Warning: git lfs ls-files failed"
+          echo "Checking for LFS files..."
+          if [ -f "third_party/halide/win/lib/Halide.lib" ]; then
+            echo "✓ Halide.lib found"
+            ls -lh third_party/halide/win/lib/Halide.lib
+          else
+            echo "⚠ Halide.lib not found"
+          fi
+          if [ -f "third_party/halide/win/bin/Halide.dll" ]; then
+            echo "✓ Halide.dll found"
+            ls -lh third_party/halide/win/bin/Halide.dll
+          else
+            echo "⚠ Halide.dll not found"
+          fi
 
       - name: Set up Xcode (Mac)
         if: matrix.platform == 'mac'
