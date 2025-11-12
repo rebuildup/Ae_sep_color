@@ -151,6 +151,7 @@
       <AdditionalLibraryDirectories>$(MSBuildProjectDirectory)\..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
       <TargetMachine>MachineX64</TargetMachine>
+      <ModuleDefinitionFile>$(MSBuildProjectDirectory)\sep_color.def</ModuleDefinitionFile>
     </Link>
     <Bscmake>
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
@@ -208,6 +209,7 @@
       <AdditionalDependencies>Halide.lib;d3d12.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(MSBuildProjectDirectory)\..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
+      <ModuleDefinitionFile>$(MSBuildProjectDirectory)\sep_color.def</ModuleDefinitionFile>
     </Link>
     <Bscmake>
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
@@ -269,6 +271,7 @@
       <AdditionalLibraryDirectories>$(MSBuildProjectDirectory)\..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
       <TargetMachine>MachineX64</TargetMachine>
+      <ModuleDefinitionFile>$(MSBuildProjectDirectory)\sep_color.def</ModuleDefinitionFile>
     </Link>
     <Bscmake>
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
@@ -327,6 +330,7 @@
       <AdditionalDependencies>Halide.lib;d3d12.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(MSBuildProjectDirectory)\..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
+      <ModuleDefinitionFile>$(MSBuildProjectDirectory)\sep_color.def</ModuleDefinitionFile>
     </Link>
     <Bscmake>
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
