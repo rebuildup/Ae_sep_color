@@ -124,9 +124,16 @@ jobs:
           
           if [ $LFS_ERROR -ne 0 ]; then
             echo "::error::Required LFS files are not available. Build cannot continue."
-            echo "::error::Please run the cleanup script to free up LFS storage:"
-            echo "::error::  .\scripts\cleanup_lfs_remote.ps1  (Windows)"
-            echo "::error::  ./scripts/cleanup_lfs_remote.sh   (Linux/macOS)"
+            echo "::error::"
+            echo "::error::LFS budget exceeded. To fix this issue:"
+            echo "::error::1. Go to GitHub repository Settings → Billing → Git LFS Data"
+            echo "::error::2. Delete old LFS objects from other repositories, OR"
+            echo "::error::3. Increase LFS storage budget"
+            echo "::error::"
+            echo "::error::Current required LFS files (~441MB total):"
+            echo "::error::  - Halide.lib (~96MB)"
+            echo "::error::  - Halide.dll (~139MB)"
+            echo "::error::  - libHalide.21.0.0.dylib (~206MB)"
             exit 1
           fi
           
