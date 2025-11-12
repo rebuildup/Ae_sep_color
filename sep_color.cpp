@@ -1866,7 +1866,6 @@ static PF_Err Render32Fast(
 	return err;
 }
 
-extern "C" DllExport
 PF_Err
 EffectMain(
 	PF_Cmd cmd,
