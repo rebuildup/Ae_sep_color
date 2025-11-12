@@ -392,6 +392,7 @@ cl /D "MSWindows" /EP $(IntDir)%(Filename).rrc &gt;               "$(ProjectDir)
     <ClCompile Include="..\..\..\Util\MissingSuiteError.cpp" />
     <ClCompile Include="..\sep_color.cpp" />
     <ClCompile Include="..\sep_color_Strings.cpp" />
+    <ClCompile Include="..\sep_color_halide.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
