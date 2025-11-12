@@ -375,6 +375,17 @@ static PF_Err Render16Iterate(
 	rc.inv_edge_width = 1.0f / rc.edge_width;
 	rc.color8 = params[ID_COLOR]->u.cd.value;
 
+	// Precompute for speed
+	rc.cs = cosf(rc.angle);
+	rc.sn = sinf(rc.angle);
+	const float r_minus8 = rc.radius - rc.edge_width;
+	const float r_plus8 = rc.radius + rc.edge_width;
+	rc.r_minus2 = r_minus8 * r_minus8;
+	rc.r_plus2 = r_plus8 * r_plus8;
+	rc.r16 = static_cast<A_u_short>((rc.color8.red * 32768 + 127) / 255);
+	rc.g16 = static_cast<A_u_short>((rc.color8.green * 32768 + 127) / 255);
+	rc.b16 = static_cast<A_u_short>((rc.color8.blue * 32768 + 127) / 255);
+
 	AEGP_SuiteHandler suites(in_data->pica_basicP);
 	PF_Rect area{0, 0, output->width, output->height};
 	PF_EffectWorld *src = &params[0]->u.ld;
@@ -1295,10 +1306,7 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 	return err;
 }
 
-extern "C" {
-#ifdef AE_OS_WIN
-__declspec(dllexport)
-#endif
+extern "C" DllExport
 PF_Err
 PluginDataEntryFunction2(
 	PF_PluginDataPtr inPtr,
@@ -1320,7 +1328,6 @@ PluginDataEntryFunction2(
 		"https://x.com/361do_sleep"); // support URL
 
 	return result;
-}
 }
 
 // -------------------------------------------------------------
@@ -1859,10 +1866,7 @@ static PF_Err Render32Fast(
 	return err;
 }
 
-extern "C" {
-#ifdef AE_OS_WIN
-__declspec(dllexport)
-#endif
+extern "C" DllExport
 PF_Err
 EffectMain(
 	PF_Cmd cmd,
@@ -1896,7 +1900,6 @@ EffectMain(
 		err = thrown_err;
 	}
 	return err;
-}
 }
 
 // -------------------------------------------------------------
