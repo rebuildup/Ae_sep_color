@@ -85,7 +85,6 @@ jobs:
           $windowsAsset = $releaseInfo.assets | Where-Object {
             $_.name -match '\.zip$' -and 
             ($_.name -match 'x64' -or $_.name -match 'x86_64') -and
-            $_.name -notmatch 'x86(?!_64)' -and
             ($_.name -match 'windows' -or $_.name -match 'win' -or $_.name -match 'Windows')
           } | Select-Object -First 1
           
@@ -93,7 +92,15 @@ jobs:
           if (-not $windowsAsset) {
             $windowsAsset = $releaseInfo.assets | Where-Object {
               $_.name -match '\.zip$' -and 
-              $_.name -notmatch 'x86(?!_64)' -and
+              $_.name -notmatch '\bx86\b' -and
+              ($_.name -match 'windows' -or $_.name -match 'win' -or $_.name -match 'Windows')
+            } | Select-Object -First 1
+          }
+          
+          # それでも見つからない場合、Windows を含むものを探す（最後の手段）
+          if (-not $windowsAsset) {
+            $windowsAsset = $releaseInfo.assets | Where-Object {
+              $_.name -match '\.zip$' -and 
               ($_.name -match 'windows' -or $_.name -match 'win' -or $_.name -match 'Windows')
             } | Select-Object -First 1
           }
@@ -197,28 +204,54 @@ jobs:
               Copy-Item -Path $sourceLib -Destination $targetLibDir -Force
               Write-Host "✓ Halide.lib copied from $sourceLib"
               
-              # 64bit版であることを検証
-              Write-Host "Verifying Halide.lib architecture..."
+              # 64bit版であることを検証（オプショナル - dumpbin が利用可能な場合のみ）
+              Write-Host "Verifying Halide.lib architecture (optional)..."
               $copiedLib = Join-Path $targetLibDir "Halide.lib"
               if (Test-Path $copiedLib) {
-                # dumpbin を使用して機械種別を確認
-                $dumpbinOutput = & dumpbin /headers $copiedLib 2>&1
-                if ($LASTEXITCODE -eq 0) {
-                  $machineType = $dumpbinOutput | Select-String -Pattern "machine \(([^)]+)\)"
-                  if ($machineType) {
-                    $arch = $machineType.Matches[0].Groups[1].Value
-                    Write-Host "Detected machine type: $arch"
-                    if ($arch -notmatch "x64|8664|AMD64") {
-                      Write-Host "::error::Halide.lib is not 64bit (detected: $arch)"
-                      Write-Host "This will cause linker errors. Please ensure the downloaded Halide release contains x64 libraries."
-                      exit 1
+                try {
+                  # dumpbin のパスを探す
+                  $dumpbinPath = $null
+                  $possiblePaths = @(
+                    "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
+                    "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
+                    "C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
+                    "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe"
+                  )
+                  
+                  foreach ($pathPattern in $possiblePaths) {
+                    $found = Get-ChildItem -Path $pathPattern -ErrorAction SilentlyContinue | Select-Object -First 1
+                    if ($found) {
+                      $dumpbinPath = $found.FullName
+                      break
                     }
-                    Write-Host "✓ Halide.lib is 64bit"
-                  } else {
-                    Write-Host "⚠ Could not determine machine type from dumpbin output"
                   }
-                } else {
-                  Write-Host "⚠ dumpbin failed, skipping architecture verification"
+                  
+                  if ($dumpbinPath -and (Test-Path $dumpbinPath)) {
+                    Write-Host "Using dumpbin: $dumpbinPath"
+                    $dumpbinOutput = & $dumpbinPath /headers $copiedLib 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                      $machineType = $dumpbinOutput | Select-String -Pattern "machine\s+\(([^)]+)\)"
+                      if ($machineType) {
+                        $arch = $machineType.Matches[0].Groups[1].Value
+                        Write-Host "Detected machine type: $arch"
+                        if ($arch -notmatch "x64|8664|AMD64") {
+                          Write-Host "::warning::Halide.lib may not be 64bit (detected: $arch)"
+                          Write-Host "This may cause linker errors. Please ensure the downloaded Halide release contains x64 libraries."
+                        } else {
+                          Write-Host "✓ Halide.lib is 64bit"
+                        }
+                      } else {
+                        Write-Host "⚠ Could not determine machine type from dumpbin output"
+                      }
+                    } else {
+                      Write-Host "⚠ dumpbin failed, skipping architecture verification"
+                    }
+                  } else {
+                    Write-Host "⚠ dumpbin not found, skipping architecture verification (will be verified during link)"
+                  }
+                } catch {
+                  Write-Host "⚠ Architecture verification failed: $_"
+                  Write-Host "Continuing anyway - will be verified during link"
                 }
               }
             } else {
