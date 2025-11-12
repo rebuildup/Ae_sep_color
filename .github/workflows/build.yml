@@ -59,34 +59,42 @@ jobs:
         run: |
           Write-Host "Downloading Halide for Windows..."
           
-          # Halideのリリースページから最新のWindows版をダウンロード
+          # GitHub APIを使用してHalideのリリース情報を取得
           $halideVersion = "v21.0.0"
-          # 複数のURL形式を試す
-          $halideUrls = @(
-            "https://github.com/halide/Halide/releases/download/$halideVersion/Halide-$halideVersion-x64-windows.zip",
-            "https://github.com/halide/Halide/releases/download/$halideVersion/Halide-$halideVersion-win64.zip"
-          )
+          $releaseUrl = "https://api.github.com/repos/halide/Halide/releases/tags/$halideVersion"
           
-          $halideZip = "$env:TEMP\Halide-windows.zip"
-          $downloadSuccess = $false
-          
-          foreach ($halideUrl in $halideUrls) {
-            try {
-              Write-Host "Trying: $halideUrl"
-              Invoke-WebRequest -Uri $halideUrl -OutFile $halideZip -UseBasicParsing -ErrorAction Stop
-              $downloadSuccess = $true
-              Write-Host "Download successful"
-              break
-            } catch {
-              Write-Host "Failed: $_"
-              continue
-            }
+          Write-Host "Fetching release information from: $releaseUrl"
+          try {
+            $releaseInfo = Invoke-RestMethod -Uri $releaseUrl -UseBasicParsing
+          } catch {
+            Write-Host "Failed to fetch release info: $_"
+            Write-Host "Trying latest release instead..."
+            $releaseUrl = "https://api.github.com/repos/halide/Halide/releases/latest"
+            $releaseInfo = Invoke-RestMethod -Uri $releaseUrl -UseBasicParsing
+            Write-Host "Using release: $($releaseInfo.tag_name)"
           }
           
-          if (-not $downloadSuccess) {
-            Write-Error "Failed to download Halide from any URL"
+          Write-Host "Available assets:"
+          $releaseInfo.assets | ForEach-Object { Write-Host "  - $($_.name)" }
+          
+          # Windows用のアセットを検索（zipファイルで、windowsまたはwinまたはx64を含む）
+          $windowsAsset = $releaseInfo.assets | Where-Object {
+            $_.name -match '\.zip$' -and ($_.name -match 'windows' -or $_.name -match 'win' -or $_.name -match 'x64' -or $_.name -match 'Windows')
+          } | Select-Object -First 1
+          
+          if (-not $windowsAsset) {
+            Write-Host "::error::Windows asset not found in release $($releaseInfo.tag_name)"
+            Write-Host "Available assets:"
+            $releaseInfo.assets | ForEach-Object { Write-Host "  - $($_.name)" }
             exit 1
           }
+          
+          Write-Host "Found asset: $($windowsAsset.name)"
+          Write-Host "Download URL: $($windowsAsset.browser_download_url)"
+          
+          $halideZip = "$env:TEMP\Halide-windows.zip"
+          Invoke-WebRequest -Uri $windowsAsset.browser_download_url -OutFile $halideZip -UseBasicParsing
+          Write-Host "Download completed ($(Get-Item $halideZip | Select-Object -ExpandProperty Length) bytes)"
           
           Write-Host "Extracting Halide..."
           $halideExtractDir = "$env:TEMP\Halide-windows"
@@ -154,32 +162,40 @@ jobs:
             HALIDE_ARCH="x86_64"
           fi
           
-          # Halideのリリースページから最新のmacOS版をダウンロード
+          # GitHub APIを使用してHalideのリリース情報を取得
           HALIDE_VERSION="v21.0.0"
-          # 複数のURL形式を試す
-          HALIDE_URLS=(
-            "https://github.com/halide/Halide/releases/download/${HALIDE_VERSION}/Halide-${HALIDE_VERSION}-${HALIDE_ARCH}-osx.tar.gz"
-            "https://github.com/halide/Halide/releases/download/${HALIDE_VERSION}/Halide-${HALIDE_VERSION}-osx-${HALIDE_ARCH}.tar.gz"
-          )
+          RELEASE_URL="https://api.github.com/repos/halide/Halide/releases/tags/${HALIDE_VERSION}"
           
-          HALIDE_TAR="$RUNNER_TEMP/Halide-macos.tar.gz"
-          DOWNLOAD_SUCCESS=false
+          echo "Fetching release information from: $RELEASE_URL"
+          RELEASE_JSON=$(curl -s "$RELEASE_URL")
           
-          for HALIDE_URL in "${HALIDE_URLS[@]}"; do
-            echo "Trying: $HALIDE_URL"
-            if curl -L -f -o "$HALIDE_TAR" "$HALIDE_URL" 2>/dev/null; then
-              echo "Download successful"
-              DOWNLOAD_SUCCESS=true
-              break
-            else
-              echo "Failed to download from $HALIDE_URL"
-            fi
-          done
+          # リリースが見つからない場合、最新リリースを使用
+          if echo "$RELEASE_JSON" | jq -e '.message' > /dev/null 2>&1; then
+            echo "Release $HALIDE_VERSION not found, trying latest release..."
+            RELEASE_URL="https://api.github.com/repos/halide/Halide/releases/latest"
+            RELEASE_JSON=$(curl -s "$RELEASE_URL")
+            ACTUAL_VERSION=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+            echo "Using release: $ACTUAL_VERSION"
+          fi
           
-          if [ "$DOWNLOAD_SUCCESS" != "true" ]; then
-            echo "::error::Failed to download Halide from any URL"
+          echo "Available assets:"
+          echo "$RELEASE_JSON" | jq -r '.assets[] | .name' | head -10
+          
+          # macOS用のアセットを検索（tar.gzファイルで、osxまたはmacを含む、またはアーキテクチャを含む）
+          MACOS_ASSET=$(echo "$RELEASE_JSON" | jq -r ".assets[] | select(.name | test(\"\\\\.tar\\\\.gz$\")) | select(.name | test(\"osx|mac|$HALIDE_ARCH\"; \"i\")) | .browser_download_url" | head -1)
+          
+          if [ -z "$MACOS_ASSET" ] || [ "$MACOS_ASSET" == "null" ]; then
+            echo "::error::macOS asset not found"
+            echo "Available assets:"
+            echo "$RELEASE_JSON" | jq -r '.assets[] | .name' | head -10
             exit 1
           fi
+          
+          echo "Found asset: $MACOS_ASSET"
+          
+          HALIDE_TAR="$RUNNER_TEMP/Halide-macos.tar.gz"
+          curl -L -o "$HALIDE_TAR" "$MACOS_ASSET"
+          echo "Download completed"
           
           echo "Extracting Halide..."
           HALIDE_EXTRACT_DIR="$RUNNER_TEMP/Halide-macos"
