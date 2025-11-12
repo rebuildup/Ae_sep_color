@@ -1,4 +1,5 @@
 #include "sep_color_halide.h"
+#include "sep_color.h"
 
 #include <cmath>
 
