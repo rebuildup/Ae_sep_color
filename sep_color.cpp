@@ -21,7 +21,7 @@
 #define SEP_COLOR_FAST_SQRT 0
 #endif
 #ifndef SEP_COLOR_USE_BASELINE
-#define SEP_COLOR_USE_BASELINE 0
+#define SEP_COLOR_USE_BASELINE 1
 #endif
 #include "sep_color_halide.h"
 
@@ -131,244 +131,292 @@ static PF_Err Render32Fast(
 // PF_Iterate pixel callbacks (disabled by default)
 struct IterateRefcon
 {
-    // Common parameters
-    int width;
-    int height;
-    int anchor_x;
-    int anchor_y;
-    float downsample_x;
-    float downsample_y;
-    float angle;
-    float radius;
-    int mode; // 1: Line, 2: Circle
-    float edge_width;
-    float inv_edge_width;
-    PF_Pixel color8;
+	// Common parameters
+	int width;
+	int height;
+	int anchor_x;
+	int anchor_y;
+	float downsample_x;
+	float downsample_y;
+	float angle;
+	float radius;
+	int mode; // 1: Line, 2: Circle
+	float edge_width;
+	float inv_edge_width;
+	PF_Pixel color8;
 };
 
 static PF_Err IteratePix8(void *refcon, A_long x, A_long y, PF_Pixel *in, PF_Pixel *out)
 {
-    const IterateRefcon *rc = reinterpret_cast<const IterateRefcon *>(refcon);
-    if (in->alpha == 0)
-    {
-        *out = *in; return PF_Err_NONE;
-    }
-    const float fx = (static_cast<float>(x) - rc->anchor_x) * rc->downsample_x;
-    const float fy = (static_cast<float>(y) - rc->anchor_y) * rc->downsample_y;
-    float coverage = 0.0f;
-    if (rc->mode == 1)
-    {
-        const float cs = cosf(rc->angle);
-        const float sn = sinf(rc->angle);
-        const float rot_x = fx * cs + fy * sn;
-        const float sd = rot_x * rc->inv_edge_width;
-        coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
-    }
-    else
-    {
-        const float dist = sqrtf(fx * fx + fy * fy);
-        const float sd = (rc->radius - dist) * rc->inv_edge_width;
-        coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
-    }
-    if (coverage <= 0.0001f)
-    {
-        *out = *in; return PF_Err_NONE;
-    }
-    if (coverage >= 0.9999f)
-    {
-        out->red = rc->color8.red; out->green = rc->color8.green; out->blue = rc->color8.blue; out->alpha = in->alpha; return PF_Err_NONE;
-    }
-    const float ca = coverage * (static_cast<float>(in->alpha) * INV_255);
-    out->red = FastBlend(in->red, rc->color8.red, ca);
-    out->green = FastBlend(in->green, rc->color8.green, ca);
-    out->blue = FastBlend(in->blue, rc->color8.blue, ca);
-    out->alpha = in->alpha;
-    return PF_Err_NONE;
+	const IterateRefcon *rc = reinterpret_cast<const IterateRefcon *>(refcon);
+	if (in->alpha == 0)
+	{
+		*out = *in;
+		return PF_Err_NONE;
+	}
+	const float fx = (static_cast<float>(x) - rc->anchor_x) * rc->downsample_x;
+	const float fy = (static_cast<float>(y) - rc->anchor_y) * rc->downsample_y;
+	float coverage = 0.0f;
+	if (rc->mode == 1)
+	{
+		const float cs = cosf(rc->angle);
+		const float sn = sinf(rc->angle);
+		const float rot_x = fx * cs + fy * sn;
+		const float sd = rot_x * rc->inv_edge_width;
+		coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+	}
+	else
+	{
+		const float dist = sqrtf(fx * fx + fy * fy);
+		const float sd = (rc->radius - dist) * rc->inv_edge_width;
+		coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+	}
+	if (coverage <= 0.0001f)
+	{
+		*out = *in;
+		return PF_Err_NONE;
+	}
+	if (coverage >= 0.9999f)
+	{
+		out->red = rc->color8.red;
+		out->green = rc->color8.green;
+		out->blue = rc->color8.blue;
+		out->alpha = in->alpha;
+		return PF_Err_NONE;
+	}
+	const float ca = coverage * (static_cast<float>(in->alpha) * INV_255);
+	out->red = FastBlend(in->red, rc->color8.red, ca);
+	out->green = FastBlend(in->green, rc->color8.green, ca);
+	out->blue = FastBlend(in->blue, rc->color8.blue, ca);
+	out->alpha = in->alpha;
+	return PF_Err_NONE;
 }
 
 static PF_Err Render8Iterate(
-    PF_InData *in_data,
-    PF_OutData *out_data,
-    PF_ParamDef *params[],
-    PF_LayerDef *output,
-    PF_Pixel *input_pixels,
-    PF_Pixel *output_pixels)
+	PF_InData *in_data,
+	PF_OutData *out_data,
+	PF_ParamDef *params[],
+	PF_LayerDef *output,
+	PF_Pixel *input_pixels,
+	PF_Pixel *output_pixels)
 {
-    (void)out_data; (void)input_pixels; (void)output_pixels; // AE passes worlds in iterate call
-    IterateRefcon rc{};
-    rc.width = output->width; rc.height = output->height;
-    rc.downsample_x = static_cast<float>(in_data->downsample_x.den) / static_cast<float>(in_data->downsample_x.num);
-    rc.downsample_y = static_cast<float>(in_data->downsample_y.den) / static_cast<float>(in_data->downsample_y.num);
-    rc.anchor_x = (params[ID_ANCHOR_POINT]->u.td.x_value >> 16);
-    rc.anchor_y = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
-    rc.angle = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16) * (3.14159265358979323846f / 180.0f);
-    rc.radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
-    rc.mode = params[ID_MODE]->u.pd.value;
-    rc.edge_width = 0.707f; rc.inv_edge_width = 1.0f / rc.edge_width;
-    rc.color8 = params[ID_COLOR]->u.cd.value;
+	(void)out_data;
+	(void)input_pixels;
+	(void)output_pixels; // AE passes worlds in iterate call
+	IterateRefcon rc{};
+	rc.width = output->width;
+	rc.height = output->height;
+	rc.downsample_x = static_cast<float>(in_data->downsample_x.den) / static_cast<float>(in_data->downsample_x.num);
+	rc.downsample_y = static_cast<float>(in_data->downsample_y.den) / static_cast<float>(in_data->downsample_y.num);
+	rc.anchor_x = (params[ID_ANCHOR_POINT]->u.td.x_value >> 16);
+	rc.anchor_y = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
+	rc.angle = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16) * (3.14159265358979323846f / 180.0f);
+	rc.radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
+	rc.mode = params[ID_MODE]->u.pd.value;
+	rc.edge_width = 0.707f;
+	rc.inv_edge_width = 1.0f / rc.edge_width;
+	rc.color8 = params[ID_COLOR]->u.cd.value;
 
-    AEGP_SuiteHandler suites(in_data->pica_basicP);
-    PF_Rect area{ 0, 0, output->width, output->height };
-    PF_EffectWorld *src = &params[0]->u.ld;
-    PF_Err err = suites.Iterate8Suite1()->iterate(
-        in_data,
-        0,
-        output->height,
-        src,
-        &area,
-        &rc,
-        IteratePix8,
-        output);
-    return err;
+	AEGP_SuiteHandler suites(in_data->pica_basicP);
+	PF_Rect area{0, 0, output->width, output->height};
+	PF_EffectWorld *src = &params[0]->u.ld;
+	PF_Err err = suites.Iterate8Suite1()->iterate(
+		in_data,
+		0,
+		output->height,
+		src,
+		&area,
+		&rc,
+		IteratePix8,
+		output);
+	return err;
 }
 
 #if SEP_COLOR_USE_PF_ITERATE
 // 16-bit iterate helpers
 struct IterateRefcon
 {
-    int width, height;
-    int anchor_x, anchor_y;
-    float downsample_x, downsample_y;
-    float angle, radius;
-    int mode; // 1: Line, 2: Circle
-    float edge_width, inv_edge_width;
-    PF_Pixel color8;
+	int width, height;
+	int anchor_x, anchor_y;
+	float downsample_x, downsample_y;
+	float angle, radius;
+	int mode; // 1: Line, 2: Circle
+	float edge_width, inv_edge_width;
+	PF_Pixel color8;
 };
 
 static PF_Err IteratePix16(void *refcon, A_long x, A_long y, PF_Pixel16 *in, PF_Pixel16 *out)
 {
-    const IterateRefcon *rc = reinterpret_cast<const IterateRefcon *>(refcon);
-    if (in->alpha == 0) { *out = *in; return PF_Err_NONE; }
-    const float fx = (static_cast<float>(x) - rc->anchor_x) * rc->downsample_x;
-    const float fy = (static_cast<float>(y) - rc->anchor_y) * rc->downsample_y;
-    float coverage;
-    if (rc->mode == 1)
-    {
-        const float cs = cosf(rc->angle), sn = sinf(rc->angle);
-        const float rot_x = fx * cs + fy * sn;
-        const float sd = rot_x * rc->inv_edge_width;
-        coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
-    }
-    else
-    {
-        const float dist = sqrtf(fx * fx + fy * fy);
-        const float sd = (rc->radius - dist) * rc->inv_edge_width;
-        coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
-    }
-    if (coverage <= 0.0001f) { *out = *in; return PF_Err_NONE; }
-    const A_u_short r = static_cast<A_u_short>((rc->color8.red   * 32768 + 127) / 255);
-    const A_u_short g = static_cast<A_u_short>((rc->color8.green * 32768 + 127) / 255);
-    const A_u_short b = static_cast<A_u_short>((rc->color8.blue  * 32768 + 127) / 255);
-    if (coverage >= 0.9999f) { out->red = r; out->green = g; out->blue = b; out->alpha = in->alpha; return PF_Err_NONE; }
-    const float ca = coverage * (static_cast<float>(in->alpha) * INV_32768);
-    out->red = FastBlend16(in->red, r, ca);
-    out->green = FastBlend16(in->green, g, ca);
-    out->blue = FastBlend16(in->blue, b, ca);
-    out->alpha = in->alpha;
-    return PF_Err_NONE;
+	const IterateRefcon *rc = reinterpret_cast<const IterateRefcon *>(refcon);
+	if (in->alpha == 0)
+	{
+		*out = *in;
+		return PF_Err_NONE;
+	}
+	const float fx = (static_cast<float>(x) - rc->anchor_x) * rc->downsample_x;
+	const float fy = (static_cast<float>(y) - rc->anchor_y) * rc->downsample_y;
+	float coverage;
+	if (rc->mode == 1)
+	{
+		const float cs = cosf(rc->angle), sn = sinf(rc->angle);
+		const float rot_x = fx * cs + fy * sn;
+		const float sd = rot_x * rc->inv_edge_width;
+		coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+	}
+	else
+	{
+		const float dist = sqrtf(fx * fx + fy * fy);
+		const float sd = (rc->radius - dist) * rc->inv_edge_width;
+		coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+	}
+	if (coverage <= 0.0001f)
+	{
+		*out = *in;
+		return PF_Err_NONE;
+	}
+	const A_u_short r = static_cast<A_u_short>((rc->color8.red * 32768 + 127) / 255);
+	const A_u_short g = static_cast<A_u_short>((rc->color8.green * 32768 + 127) / 255);
+	const A_u_short b = static_cast<A_u_short>((rc->color8.blue * 32768 + 127) / 255);
+	if (coverage >= 0.9999f)
+	{
+		out->red = r;
+		out->green = g;
+		out->blue = b;
+		out->alpha = in->alpha;
+		return PF_Err_NONE;
+	}
+	const float ca = coverage * (static_cast<float>(in->alpha) * INV_32768);
+	out->red = FastBlend16(in->red, r, ca);
+	out->green = FastBlend16(in->green, g, ca);
+	out->blue = FastBlend16(in->blue, b, ca);
+	out->alpha = in->alpha;
+	return PF_Err_NONE;
 }
 
 static PF_Err Render16Iterate(
-    PF_InData *in_data,
-    PF_OutData *out_data,
-    PF_ParamDef *params[],
-    PF_LayerDef *output,
-    PF_Pixel16 *input_pixels,
-    PF_Pixel16 *output_pixels)
+	PF_InData *in_data,
+	PF_OutData *out_data,
+	PF_ParamDef *params[],
+	PF_LayerDef *output,
+	PF_Pixel16 *input_pixels,
+	PF_Pixel16 *output_pixels)
 {
-    (void)out_data; (void)input_pixels; (void)output_pixels;
-    IterateRefcon rc{};
-    rc.width = output->width; rc.height = output->height;
-    rc.downsample_x = static_cast<float>(in_data->downsample_x.den) / static_cast<float>(in_data->downsample_x.num);
-    rc.downsample_y = static_cast<float>(in_data->downsample_y.den) / static_cast<float>(in_data->downsample_y.num);
-    rc.anchor_x = (params[ID_ANCHOR_POINT]->u.td.x_value >> 16);
-    rc.anchor_y = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
-    rc.angle = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16) * (3.14159265358979323846f / 180.0f);
-    rc.radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
-    rc.mode = params[ID_MODE]->u.pd.value;
-    rc.edge_width = 0.707f; rc.inv_edge_width = 1.0f / rc.edge_width;
-    rc.color8 = params[ID_COLOR]->u.cd.value;
+	(void)out_data;
+	(void)input_pixels;
+	(void)output_pixels;
+	IterateRefcon rc{};
+	rc.width = output->width;
+	rc.height = output->height;
+	rc.downsample_x = static_cast<float>(in_data->downsample_x.den) / static_cast<float>(in_data->downsample_x.num);
+	rc.downsample_y = static_cast<float>(in_data->downsample_y.den) / static_cast<float>(in_data->downsample_y.num);
+	rc.anchor_x = (params[ID_ANCHOR_POINT]->u.td.x_value >> 16);
+	rc.anchor_y = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
+	rc.angle = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16) * (3.14159265358979323846f / 180.0f);
+	rc.radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
+	rc.mode = params[ID_MODE]->u.pd.value;
+	rc.edge_width = 0.707f;
+	rc.inv_edge_width = 1.0f / rc.edge_width;
+	rc.color8 = params[ID_COLOR]->u.cd.value;
 
-    AEGP_SuiteHandler suites(in_data->pica_basicP);
-    PF_Rect area{ 0, 0, output->width, output->height };
-    PF_EffectWorld *src = &params[0]->u.ld;
-    return suites.Iterate16Suite1()->iterate(
-        in_data,
-        0,
-        output->height,
-        src,
-        &area,
-        &rc,
-        IteratePix16,
-        output);
+	AEGP_SuiteHandler suites(in_data->pica_basicP);
+	PF_Rect area{0, 0, output->width, output->height};
+	PF_EffectWorld *src = &params[0]->u.ld;
+	return suites.Iterate16Suite1()->iterate(
+		in_data,
+		0,
+		output->height,
+		src,
+		&area,
+		&rc,
+		IteratePix16,
+		output);
 }
 
 static PF_Err IteratePix32(void *refcon, A_long x, A_long y, PF_PixelFloat *in, PF_PixelFloat *out)
 {
-    const IterateRefcon *rc = reinterpret_cast<const IterateRefcon *>(refcon);
-    if (in->alpha <= 0.0f) { *out = *in; return PF_Err_NONE; }
-    const float fx = (static_cast<float>(x) - rc->anchor_x) * rc->downsample_x;
-    const float fy = (static_cast<float>(y) - rc->anchor_y) * rc->downsample_y;
-    float coverage;
-    if (rc->mode == 1)
-    {
-        const float cs = cosf(rc->angle), sn = sinf(rc->angle);
-        const float rot_x = fx * cs + fy * sn;
-        const float sd = rot_x * rc->inv_edge_width;
-        coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
-    }
-    else
-    {
-        const float dist = sqrtf(fx * fx + fy * fy);
-        const float sd = (rc->radius - dist) * rc->inv_edge_width;
-        coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
-    }
-    if (coverage <= 0.0001f) { *out = *in; return PF_Err_NONE; }
-    const float r = static_cast<float>(rc->color8.red) * INV_255;
-    const float g = static_cast<float>(rc->color8.green) * INV_255;
-    const float b = static_cast<float>(rc->color8.blue) * INV_255;
-    if (coverage >= 0.9999f) { out->red = r; out->green = g; out->blue = b; out->alpha = in->alpha; return PF_Err_NONE; }
-    const float ca = coverage * in->alpha;
-    out->red = FastBlendFloat(in->red, r, ca);
-    out->green = FastBlendFloat(in->green, g, ca);
-    out->blue = FastBlendFloat(in->blue, b, ca);
-    out->alpha = in->alpha;
-    return PF_Err_NONE;
+	const IterateRefcon *rc = reinterpret_cast<const IterateRefcon *>(refcon);
+	if (in->alpha <= 0.0f)
+	{
+		*out = *in;
+		return PF_Err_NONE;
+	}
+	const float fx = (static_cast<float>(x) - rc->anchor_x) * rc->downsample_x;
+	const float fy = (static_cast<float>(y) - rc->anchor_y) * rc->downsample_y;
+	float coverage;
+	if (rc->mode == 1)
+	{
+		const float cs = cosf(rc->angle), sn = sinf(rc->angle);
+		const float rot_x = fx * cs + fy * sn;
+		const float sd = rot_x * rc->inv_edge_width;
+		coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+	}
+	else
+	{
+		const float dist = sqrtf(fx * fx + fy * fy);
+		const float sd = (rc->radius - dist) * rc->inv_edge_width;
+		coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+	}
+	if (coverage <= 0.0001f)
+	{
+		*out = *in;
+		return PF_Err_NONE;
+	}
+	const float r = static_cast<float>(rc->color8.red) * INV_255;
+	const float g = static_cast<float>(rc->color8.green) * INV_255;
+	const float b = static_cast<float>(rc->color8.blue) * INV_255;
+	if (coverage >= 0.9999f)
+	{
+		out->red = r;
+		out->green = g;
+		out->blue = b;
+		out->alpha = in->alpha;
+		return PF_Err_NONE;
+	}
+	const float ca = coverage * in->alpha;
+	out->red = FastBlendFloat(in->red, r, ca);
+	out->green = FastBlendFloat(in->green, g, ca);
+	out->blue = FastBlendFloat(in->blue, b, ca);
+	out->alpha = in->alpha;
+	return PF_Err_NONE;
 }
 
 static PF_Err Render32Iterate(
-    PF_InData *in_data,
-    PF_OutData *out_data,
-    PF_ParamDef *params[],
-    PF_LayerDef *output,
-    PF_PixelFloat *input_pixels,
-    PF_PixelFloat *output_pixels)
+	PF_InData *in_data,
+	PF_OutData *out_data,
+	PF_ParamDef *params[],
+	PF_LayerDef *output,
+	PF_PixelFloat *input_pixels,
+	PF_PixelFloat *output_pixels)
 {
-    (void)out_data; (void)input_pixels; (void)output_pixels;
-    IterateRefcon rc{};
-    rc.width = output->width; rc.height = output->height;
-    rc.downsample_x = static_cast<float>(in_data->downsample_x.den) / static_cast<float>(in_data->downsample_x.num);
-    rc.downsample_y = static_cast<float>(in_data->downsample_y.den) / static_cast<float>(in_data->downsample_y.num);
-    rc.anchor_x = (params[ID_ANCHOR_POINT]->u.td.x_value >> 16);
-    rc.anchor_y = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
-    rc.angle = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16) * (3.14159265358979323846f / 180.0f);
-    rc.radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
-    rc.mode = params[ID_MODE]->u.pd.value;
-    rc.edge_width = 0.707f; rc.inv_edge_width = 1.0f / rc.edge_width;
-    rc.color8 = params[ID_COLOR]->u.cd.value;
+	(void)out_data;
+	(void)input_pixels;
+	(void)output_pixels;
+	IterateRefcon rc{};
+	rc.width = output->width;
+	rc.height = output->height;
+	rc.downsample_x = static_cast<float>(in_data->downsample_x.den) / static_cast<float>(in_data->downsample_x.num);
+	rc.downsample_y = static_cast<float>(in_data->downsample_y.den) / static_cast<float>(in_data->downsample_y.num);
+	rc.anchor_x = (params[ID_ANCHOR_POINT]->u.td.x_value >> 16);
+	rc.anchor_y = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
+	rc.angle = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16) * (3.14159265358979323846f / 180.0f);
+	rc.radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
+	rc.mode = params[ID_MODE]->u.pd.value;
+	rc.edge_width = 0.707f;
+	rc.inv_edge_width = 1.0f / rc.edge_width;
+	rc.color8 = params[ID_COLOR]->u.cd.value;
 
-    AEGP_SuiteHandler suites(in_data->pica_basicP);
-    PF_Rect area{ 0, 0, output->width, output->height };
-    PF_EffectWorld *src = &params[0]->u.ld;
-    return suites.IterateFloatSuite1()->iterate(
-        in_data,
-        0,
-        output->height,
-        src,
-        &area,
-        &rc,
-        IteratePix32,
-        output);
+	AEGP_SuiteHandler suites(in_data->pica_basicP);
+	PF_Rect area{0, 0, output->width, output->height};
+	PF_EffectWorld *src = &params[0]->u.ld;
+	return suites.IterateFloatSuite1()->iterate(
+		in_data,
+		0,
+		output->height,
+		src,
+		&area,
+		&rc,
+		IteratePix32,
+		output);
 }
 #endif // SEP_COLOR_USE_PF_ITERATE
 #endif // SEP_COLOR_USE_PF_ITERATE
@@ -1107,20 +1155,20 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 		PF_Pixel16 *input_pixels = reinterpret_cast<PF_Pixel16 *>(input->data);
 		PF_Pixel16 *output_pixels = reinterpret_cast<PF_Pixel16 *>(output->data);
 #if SEP_COLOR_USE_BASELINE
-			err = Render16(in_data, out_data, params, output, input_pixels, output_pixels);
+		err = Render16(in_data, out_data, params, output, input_pixels, output_pixels);
 #elif SEP_COLOR_ENABLE_HALIDE
-			if (!SepColorHalide_Render16(in_data, out_data, params, output, input_pixels, output_pixels))
-			{
+		if (!SepColorHalide_Render16(in_data, out_data, params, output, input_pixels, output_pixels))
+		{
 #if SEP_COLOR_USE_PF_ITERATE
-				err = Render16Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
-#else
-				err = Render16Fast(in_data, out_data, params, output, input_pixels, output_pixels);
-#endif
-			}
-#elif SEP_COLOR_USE_PF_ITERATE
 			err = Render16Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
 #else
 			err = Render16Fast(in_data, out_data, params, output, input_pixels, output_pixels);
+#endif
+		}
+#elif SEP_COLOR_USE_PF_ITERATE
+		err = Render16Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
+#else
+		err = Render16Fast(in_data, out_data, params, output, input_pixels, output_pixels);
 #endif
 	}
 	else
@@ -1248,9 +1296,9 @@ static PF_Err Render16Fast(
 	// Convert 8-bit UI color to 16-bit domain (0..32768)
 	const PF_Pixel color8 = params[ID_COLOR]->u.cd.value;
 	PF_Pixel16 color16;
-	color16.red   = static_cast<A_u_short>((color8.red   * 32768 + 127) / 255);
+	color16.red = static_cast<A_u_short>((color8.red * 32768 + 127) / 255);
 	color16.green = static_cast<A_u_short>((color8.green * 32768 + 127) / 255);
-	color16.blue  = static_cast<A_u_short>((color8.blue  * 32768 + 127) / 255);
+	color16.blue = static_cast<A_u_short>((color8.blue * 32768 + 127) / 255);
 	color16.alpha = PF_MAX_CHAN16;
 
 	const int num_threads = std::min<int>(std::max(1u, std::thread::hardware_concurrency()), std::max(1, height));
@@ -1276,7 +1324,11 @@ static PF_Err Render16Fast(
 			{
 				// abort check per row
 				PF_Err abort_err = PF_ABORT(in_data);
-				if (abort_err) { err = abort_err; return; }
+				if (abort_err)
+				{
+					err = abort_err;
+					return;
+				}
 
 				const PF_Pixel16 *input_row = input_pixels + y * input_stride;
 				PF_Pixel16 *output_row = output_pixels + y * output_stride;
@@ -1291,7 +1343,10 @@ static PF_Err Render16Fast(
 				float row_max = std::max(rot_x0, rot_xN);
 				if (row_max <= -edge_width)
 				{
-					if (!in_place) { std::memcpy(output_row, input_row, sizeof(PF_Pixel16) * width); }
+					if (!in_place)
+					{
+						std::memcpy(output_row, input_row, sizeof(PF_Pixel16) * width);
+					}
 					continue;
 				}
 				if (row_min >= edge_width)
@@ -1299,9 +1354,9 @@ static PF_Err Render16Fast(
 					for (int x = 0; x < width; ++x)
 					{
 						const PF_Pixel16 &inpx = input_row[x];
-						output_row[x].red   = color16.red;
+						output_row[x].red = color16.red;
 						output_row[x].green = color16.green;
-						output_row[x].blue  = color16.blue;
+						output_row[x].blue = color16.blue;
 						output_row[x].alpha = inpx.alpha;
 					}
 					continue;
@@ -1313,7 +1368,8 @@ static PF_Err Render16Fast(
 					const PF_Pixel16 &input_px = input_row[x];
 					if (input_px.alpha == 0)
 					{
-						if (!in_place) output_row[x] = input_px;
+						if (!in_place)
+							output_row[x] = input_px;
 						rotated_x += rot_dx;
 						continue;
 					}
@@ -1324,21 +1380,22 @@ static PF_Err Render16Fast(
 
 					if (coverage <= 0.0001f)
 					{
-						if (!in_place) output_row[x] = input_px;
+						if (!in_place)
+							output_row[x] = input_px;
 					}
 					else if (coverage >= 0.9999f)
 					{
-						output_row[x].red   = color16.red;
+						output_row[x].red = color16.red;
 						output_row[x].green = color16.green;
-						output_row[x].blue  = color16.blue;
+						output_row[x].blue = color16.blue;
 						output_row[x].alpha = input_px.alpha;
 					}
 					else
 					{
 						const float coverage_alpha = coverage * (static_cast<float>(input_px.alpha) * INV_32768);
-						output_row[x].red   = FastBlend16(input_px.red,   color16.red,   coverage_alpha);
+						output_row[x].red = FastBlend16(input_px.red, color16.red, coverage_alpha);
 						output_row[x].green = FastBlend16(input_px.green, color16.green, coverage_alpha);
-						output_row[x].blue  = FastBlend16(input_px.blue,  color16.blue,  coverage_alpha);
+						output_row[x].blue = FastBlend16(input_px.blue, color16.blue, coverage_alpha);
 						output_row[x].alpha = input_px.alpha;
 					}
 
@@ -1353,9 +1410,11 @@ static PF_Err Render16Fast(
 		{
 			int start_y = t * rows_per_thread;
 			int end_y = std::min(start_y + rows_per_thread, height);
-			if (start_y < height) threads.emplace_back(process_rows, start_y, end_y);
+			if (start_y < height)
+				threads.emplace_back(process_rows, start_y, end_y);
 		}
-		for (auto &th : threads) th.join();
+		for (auto &th : threads)
+			th.join();
 	}
 	else
 	{
@@ -1373,7 +1432,11 @@ static PF_Err Render16Fast(
 			for (int y = start_y; y < end_y; y++)
 			{
 				PF_Err abort_err = PF_ABORT(in_data);
-				if (abort_err) { err = abort_err; return; }
+				if (abort_err)
+				{
+					err = abort_err;
+					return;
+				}
 
 				const PF_Pixel16 *input_row = input_pixels + y * input_stride;
 				PF_Pixel16 *output_row = output_pixels + y * output_stride;
@@ -1389,7 +1452,8 @@ static PF_Err Render16Fast(
 				float dist2_max = std::max(rx_min * rx_min + ry2, rx_max * rx_max + ry2);
 				if (dist2_min >= r_plus2)
 				{
-					if (!in_place) std::memcpy(output_row, input_row, sizeof(PF_Pixel16) * width);
+					if (!in_place)
+						std::memcpy(output_row, input_row, sizeof(PF_Pixel16) * width);
 					continue;
 				}
 				if (dist2_max <= r_minus2)
@@ -1397,9 +1461,9 @@ static PF_Err Render16Fast(
 					for (int x = 0; x < width; ++x)
 					{
 						const PF_Pixel16 &inpx = input_row[x];
-						output_row[x].red   = color16.red;
+						output_row[x].red = color16.red;
 						output_row[x].green = color16.green;
-						output_row[x].blue  = color16.blue;
+						output_row[x].blue = color16.blue;
 						output_row[x].alpha = inpx.alpha;
 					}
 					continue;
@@ -1412,7 +1476,8 @@ static PF_Err Render16Fast(
 					const PF_Pixel16 &input_px = input_row[x];
 					if (input_px.alpha == 0)
 					{
-						if (!in_place) output_row[x] = input_px;
+						if (!in_place)
+							output_row[x] = input_px;
 						rx += dx;
 						dist2 += twodx * (rx - dx) + dx2;
 						continue;
@@ -1425,21 +1490,22 @@ static PF_Err Render16Fast(
 
 					if (coverage <= 0.0001f)
 					{
-						if (!in_place) output_row[x] = input_px;
+						if (!in_place)
+							output_row[x] = input_px;
 					}
 					else if (coverage >= 0.9999f)
 					{
-						output_row[x].red   = color16.red;
+						output_row[x].red = color16.red;
 						output_row[x].green = color16.green;
-						output_row[x].blue  = color16.blue;
+						output_row[x].blue = color16.blue;
 						output_row[x].alpha = input_px.alpha;
 					}
 					else
 					{
 						const float coverage_alpha = coverage * (static_cast<float>(input_px.alpha) * INV_32768);
-						output_row[x].red   = FastBlend16(input_px.red,   color16.red,   coverage_alpha);
+						output_row[x].red = FastBlend16(input_px.red, color16.red, coverage_alpha);
 						output_row[x].green = FastBlend16(input_px.green, color16.green, coverage_alpha);
-						output_row[x].blue  = FastBlend16(input_px.blue,  color16.blue,  coverage_alpha);
+						output_row[x].blue = FastBlend16(input_px.blue, color16.blue, coverage_alpha);
 						output_row[x].alpha = input_px.alpha;
 					}
 
@@ -1455,9 +1521,11 @@ static PF_Err Render16Fast(
 		{
 			int start_y = t * rows_per_thread;
 			int end_y = std::min(start_y + rows_per_thread, height);
-			if (start_y < height) threads.emplace_back(process_rows, start_y, end_y);
+			if (start_y < height)
+				threads.emplace_back(process_rows, start_y, end_y);
 		}
-		for (auto &th : threads) th.join();
+		for (auto &th : threads)
+			th.join();
 	}
 
 	return err;
@@ -1497,9 +1565,9 @@ static PF_Err Render32Fast(
 	// Convert UI color (8-bit) to float [0..1]
 	const PF_Pixel color8 = params[ID_COLOR]->u.cd.value;
 	PF_PixelFloat colorF;
-	colorF.red   = static_cast<float>(color8.red)   * INV_255;
+	colorF.red = static_cast<float>(color8.red) * INV_255;
 	colorF.green = static_cast<float>(color8.green) * INV_255;
-	colorF.blue  = static_cast<float>(color8.blue)  * INV_255;
+	colorF.blue = static_cast<float>(color8.blue) * INV_255;
 	colorF.alpha = 1.0f;
 
 	const int num_threads = std::min<int>(std::max(1u, std::thread::hardware_concurrency()), std::max(1, height));
@@ -1524,7 +1592,11 @@ static PF_Err Render32Fast(
 			for (int y = start_y; y < end_y; y++)
 			{
 				PF_Err abort_err = PF_ABORT(in_data);
-				if (abort_err) { err = abort_err; return; }
+				if (abort_err)
+				{
+					err = abort_err;
+					return;
+				}
 
 				const PF_PixelFloat *input_row = input_pixels + y * input_stride;
 				PF_PixelFloat *output_row = output_pixels + y * output_stride;
@@ -1539,7 +1611,10 @@ static PF_Err Render32Fast(
 				float row_max = std::max(rot_x0, rot_xN);
 				if (row_max <= -edge_width)
 				{
-					if (!in_place) { std::memcpy(output_row, input_row, sizeof(PF_PixelFloat) * width); }
+					if (!in_place)
+					{
+						std::memcpy(output_row, input_row, sizeof(PF_PixelFloat) * width);
+					}
 					continue;
 				}
 				if (row_min >= edge_width)
@@ -1561,7 +1636,8 @@ static PF_Err Render32Fast(
 					const PF_PixelFloat &input_px = input_row[x];
 					if (input_px.alpha <= 0.0f)
 					{
-						if (!in_place) output_row[x] = input_px;
+						if (!in_place)
+							output_row[x] = input_px;
 						rotated_x += rot_dx;
 						continue;
 					}
@@ -1572,7 +1648,8 @@ static PF_Err Render32Fast(
 
 					if (coverage <= 0.0001f)
 					{
-						if (!in_place) output_row[x] = input_px;
+						if (!in_place)
+							output_row[x] = input_px;
 					}
 					else if (coverage >= 0.9999f)
 					{
@@ -1584,9 +1661,9 @@ static PF_Err Render32Fast(
 					else
 					{
 						const float coverage_alpha = coverage * input_px.alpha;
-						output_row[x].red   = FastBlendFloat(input_px.red,   colorF.red,   coverage_alpha);
+						output_row[x].red = FastBlendFloat(input_px.red, colorF.red, coverage_alpha);
 						output_row[x].green = FastBlendFloat(input_px.green, colorF.green, coverage_alpha);
-						output_row[x].blue  = FastBlendFloat(input_px.blue,  colorF.blue,  coverage_alpha);
+						output_row[x].blue = FastBlendFloat(input_px.blue, colorF.blue, coverage_alpha);
 						output_row[x].alpha = input_px.alpha;
 					}
 
@@ -1601,9 +1678,11 @@ static PF_Err Render32Fast(
 		{
 			int start_y = t * rows_per_thread;
 			int end_y = std::min(start_y + rows_per_thread, height);
-			if (start_y < height) threads.emplace_back(process_rows, start_y, end_y);
+			if (start_y < height)
+				threads.emplace_back(process_rows, start_y, end_y);
 		}
-		for (auto &th : threads) th.join();
+		for (auto &th : threads)
+			th.join();
 	}
 	else
 	{
@@ -1621,7 +1700,11 @@ static PF_Err Render32Fast(
 			for (int y = start_y; y < end_y; y++)
 			{
 				PF_Err abort_err = PF_ABORT(in_data);
-				if (abort_err) { err = abort_err; return; }
+				if (abort_err)
+				{
+					err = abort_err;
+					return;
+				}
 
 				const PF_PixelFloat *input_row = input_pixels + y * input_stride;
 				PF_PixelFloat *output_row = output_pixels + y * output_stride;
@@ -1636,7 +1719,8 @@ static PF_Err Render32Fast(
 				float dist2_max = std::max(rx_min * rx_min + ry2, rx_max * rx_max + ry2);
 				if (dist2_min >= r_plus2)
 				{
-					if (!in_place) std::memcpy(output_row, input_row, sizeof(PF_PixelFloat) * width);
+					if (!in_place)
+						std::memcpy(output_row, input_row, sizeof(PF_PixelFloat) * width);
 					continue;
 				}
 				if (dist2_max <= r_minus2)
@@ -1644,9 +1728,9 @@ static PF_Err Render32Fast(
 					for (int x = 0; x < width; ++x)
 					{
 						const PF_PixelFloat &inpx = input_row[x];
-						output_row[x].red   = colorF.red;
+						output_row[x].red = colorF.red;
 						output_row[x].green = colorF.green;
-						output_row[x].blue  = colorF.blue;
+						output_row[x].blue = colorF.blue;
 						output_row[x].alpha = inpx.alpha;
 					}
 					continue;
@@ -1659,7 +1743,8 @@ static PF_Err Render32Fast(
 					const PF_PixelFloat &input_px = input_row[x];
 					if (input_px.alpha <= 0.0f)
 					{
-						if (!in_place) output_row[x] = input_px;
+						if (!in_place)
+							output_row[x] = input_px;
 						rx += dx;
 						dist2 += twodx * (rx - dx) + dx2;
 						continue;
@@ -1672,21 +1757,22 @@ static PF_Err Render32Fast(
 
 					if (coverage <= 0.0001f)
 					{
-						if (!in_place) output_row[x] = input_px;
+						if (!in_place)
+							output_row[x] = input_px;
 					}
 					else if (coverage >= 0.9999f)
 					{
-						output_row[x].red   = colorF.red;
+						output_row[x].red = colorF.red;
 						output_row[x].green = colorF.green;
-						output_row[x].blue  = colorF.blue;
+						output_row[x].blue = colorF.blue;
 						output_row[x].alpha = input_px.alpha;
 					}
 					else
 					{
 						const float coverage_alpha = coverage * input_px.alpha;
-						output_row[x].red   = FastBlendFloat(input_px.red,   colorF.red,   coverage_alpha);
+						output_row[x].red = FastBlendFloat(input_px.red, colorF.red, coverage_alpha);
 						output_row[x].green = FastBlendFloat(input_px.green, colorF.green, coverage_alpha);
-						output_row[x].blue  = FastBlendFloat(input_px.blue,  colorF.blue,  coverage_alpha);
+						output_row[x].blue = FastBlendFloat(input_px.blue, colorF.blue, coverage_alpha);
 						output_row[x].alpha = input_px.alpha;
 					}
 
@@ -1702,9 +1788,11 @@ static PF_Err Render32Fast(
 		{
 			int start_y = t * rows_per_thread;
 			int end_y = std::min(start_y + rows_per_thread, height);
-			if (start_y < height) threads.emplace_back(process_rows, start_y, end_y);
+			if (start_y < height)
+				threads.emplace_back(process_rows, start_y, end_y);
 		}
-		for (auto &th : threads) th.join();
+		for (auto &th : threads)
+			th.join();
 	}
 
 	return err;
@@ -1837,6 +1925,24 @@ static PF_Err Render8Fast(
 					{
 						if (!in_place)
 							output_row[x] = input_px;
+						rotated_x += rot_dx;
+						continue;
+					}
+
+					// Per-pixel early-out without computing coverage
+					if (rotated_x <= -edge_width)
+					{
+						if (!in_place)
+							output_row[x] = input_px;
+						rotated_x += rot_dx;
+						continue;
+					}
+					if (rotated_x >= edge_width)
+					{
+						output_row[x].red = color.red;
+						output_row[x].green = color.green;
+						output_row[x].blue = color.blue;
+						output_row[x].alpha = input_px.alpha;
 						rotated_x += rot_dx;
 						continue;
 					}
@@ -2008,8 +2114,3 @@ static PF_Err Render8Fast(
 
 	return err;
 }
-
-
-
-
-
