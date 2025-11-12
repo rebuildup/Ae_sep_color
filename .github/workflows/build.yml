@@ -816,7 +816,24 @@ jobs:
           echo "  Configuration: Debug"
           echo "  SDK: macosx"
           echo "  Architectures: x86_64, arm64"
+          echo "  Plugin directory: $PLUGIN_DIR"
+          echo "  Current directory: $(pwd)"
           
+          # Verify Halide library exists
+          HALIDE_LIB="../third_party/halide/mac/lib/libHalide.21.0.0.dylib"
+          if [ ! -f "$HALIDE_LIB" ]; then
+            echo "::error::Halide library not found: $HALIDE_LIB"
+            echo "Contents of third_party/halide/mac/lib:"
+            ls -la "../third_party/halide/mac/lib/" || true
+            exit 1
+          fi
+          echo "✓ Halide library found: $HALIDE_LIB"
+          
+          # Build with detailed output
+          echo "Starting xcodebuild..."
+          BUILD_LOG="${{ github.workspace }}/xcodebuild.log"
+          
+          set +e
           xcodebuild build \
             -project sep_color.xcodeproj \
             -target sep_color \
@@ -828,7 +845,18 @@ jobs:
             CONFIGURATION_BUILD_DIR="$(pwd)/build" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee "$BUILD_LOG"
+          BUILD_EXIT_CODE=$?
+          set -e
+          
+          if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            echo "::error::xcodebuild failed with exit code $BUILD_EXIT_CODE"
+            echo "Last 100 lines of build log:"
+            tail -100 "$BUILD_LOG" || true
+            echo "Full build log saved to: $BUILD_LOG"
+            exit 1
+          fi
           
           echo "Build successful"
           
@@ -852,8 +880,11 @@ jobs:
             cp -R "$PLUGIN_PATH" "${{ github.workspace }}/artifacts/"
             echo "Artifact copied: artifacts/sep_color.plugin"
           else
-            echo "Error: Build artifact not found"
-            find . -name "*.plugin" -o -name "*.o" | head -20
+            echo "::error::Build artifact not found"
+            echo "Build directory contents:"
+            find build -type f -o -type d | head -30 || true
+            echo "Searching for any .plugin files:"
+            find . -name "*.plugin" -o -name "*.o" | head -20 || true
             exit 1
           fi
           
