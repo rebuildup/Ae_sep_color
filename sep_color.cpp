@@ -113,8 +113,10 @@ GlobalSetup(
 	out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE;
 
 	// 32-bit float対応フラグ（警告を防ぐために必要）
+	// ヘッダーファイルから正しい値を確認して設定
+	// PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000
 	// PF_OutFlag2_FLOAT_COLOR_AWARE = 0x00000001
-	out_data->out_flags2 = 0x08000001; // PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_FLOAT_COLOR_AWARE
+	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_FLOAT_COLOR_AWARE;
 
 	return PF_Err_NONE;
 }
