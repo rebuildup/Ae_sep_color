@@ -70,7 +70,6 @@ bool SepColorHalide_Render8(PF_InData *in_data,
 
     // Blend per channel; preserve alpha
     Expr a = cast<float>(in_buf(x, y, 3)) / 255.0f;
-    Expr alpha = in_buf(x, y, 3);
     Expr cov_a = coverage(x, y) * a; // coverage * input alpha (premultiplied)
     Expr r_dst = cast<float>(col.red);
     Expr g_dst = cast<float>(col.green);
@@ -83,7 +82,7 @@ bool SepColorHalide_Render8(PF_InData *in_data,
     out(x, y, 0) = cast<uint8_t>(r_src + (r_dst - r_src) * cov_a + 0.5f);
     out(x, y, 1) = cast<uint8_t>(g_src + (g_dst - g_src) * cov_a + 0.5f);
     out(x, y, 2) = cast<uint8_t>(b_src + (b_dst - b_src) * cov_a + 0.5f);
-    out(x, y, 3) = in_buf(x, y, 3);
+    out(x, y, 3) = cast<uint8_t>(in_buf(x, y, 3));
 
     // Schedule
 #ifdef SEP_COLOR_HALIDE_GPU
