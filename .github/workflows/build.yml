@@ -52,15 +52,64 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: true
+          lfs: false
 
-      - name: Ensure Git LFS files are present
+      - name: Install Git LFS
         shell: bash
         run: |
-          set -e
           git lfs install
-          git lfs fetch --all
-          git lfs checkout
+
+      - name: Fetch Git LFS files (skip on budget error)
+        shell: bash
+        continue-on-error: true
+        run: |
+          echo "Attempting to fetch Git LFS files..."
+          echo "Note: If LFS budget is exceeded, this step will fail but build will continue"
+          if git lfs fetch --all 2>&1 | grep -q "exceeded its LFS budget"; then
+            echo "::warning::LFS budget exceeded. Skipping LFS file fetch. Build will continue without LFS files."
+            exit 0
+          fi
+          git lfs checkout || echo "Warning: git lfs checkout failed"
+          echo "LFS fetch completed"
+
+      - name: Verify Git LFS files
+        shell: bash
+        continue-on-error: true
+        run: |
+          echo "Verifying Git LFS files..."
+          git lfs ls-files || echo "Warning: git lfs ls-files failed"
+          echo "Checking for LFS files..."
+          if [ -f "third_party/halide/win/lib/Halide.lib" ]; then
+            FILE_SIZE=$(ls -lh third_party/halide/win/lib/Halide.lib | awk '{print $5}')
+            if [ "$FILE_SIZE" != "0" ] && [ -s "third_party/halide/win/lib/Halide.lib" ]; then
+              echo "✓ Halide.lib found ($FILE_SIZE)"
+            else
+              echo "⚠ Halide.lib found but appears to be a pointer file (LFS not fetched)"
+            fi
+          else
+            echo "⚠ Halide.lib not found"
+          fi
+          if [ -f "third_party/halide/win/bin/Halide.dll" ]; then
+            FILE_SIZE=$(ls -lh third_party/halide/win/bin/Halide.dll | awk '{print $5}')
+            if [ "$FILE_SIZE" != "0" ] && [ -s "third_party/halide/win/bin/Halide.dll" ]; then
+              echo "✓ Halide.dll found ($FILE_SIZE)"
+            else
+              echo "⚠ Halide.dll found but appears to be a pointer file (LFS not fetched)"
+            fi
+          else
+            echo "⚠ Halide.dll not found"
+          fi
+          if [ -f "third_party/halide/mac/lib/libHalide.21.0.0.dylib" ]; then
+            FILE_SIZE=$(ls -lh third_party/halide/mac/lib/libHalide.21.0.0.dylib | awk '{print $5}')
+            if [ "$FILE_SIZE" != "0" ] && [ -s "third_party/halide/mac/lib/libHalide.21.0.0.dylib" ]; then
+              echo "✓ libHalide.21.0.0.dylib found ($FILE_SIZE)"
+            else
+              echo "⚠ libHalide.21.0.0.dylib found but appears to be a pointer file (LFS not fetched)"
+            fi
+          else
+            echo "⚠ libHalide.21.0.0.dylib not found"
+          fi
+          echo "::warning::If LFS files are not available, the build may fail. Consider increasing LFS budget or using alternative storage."
 
       - name: Set up Xcode (Mac)
         if: matrix.platform == 'mac'
