@@ -77,10 +77,26 @@ jobs:
           Write-Host "Available assets:"
           $releaseInfo.assets | ForEach-Object { Write-Host "  - $($_.name)" }
           
-          # Windows用のアセットを検索（zipファイルで、windowsまたはwinまたはx64を含む）
+          # Windows用のアセットを検索（x64版を優先、x86版は除外）
+          # 優先順位: x64を含む > windows/winを含む（x86を含まない） > その他
+          $windowsAsset = $null
+          
+          # まず x64 を含むものを探す
           $windowsAsset = $releaseInfo.assets | Where-Object {
-            $_.name -match '\.zip$' -and ($_.name -match 'windows' -or $_.name -match 'win' -or $_.name -match 'x64' -or $_.name -match 'Windows')
+            $_.name -match '\.zip$' -and 
+            ($_.name -match 'x64' -or $_.name -match 'x86_64') -and
+            $_.name -notmatch 'x86(?!_64)' -and
+            ($_.name -match 'windows' -or $_.name -match 'win' -or $_.name -match 'Windows')
           } | Select-Object -First 1
+          
+          # x64 が見つからない場合、x86 を含まないものを探す
+          if (-not $windowsAsset) {
+            $windowsAsset = $releaseInfo.assets | Where-Object {
+              $_.name -match '\.zip$' -and 
+              $_.name -notmatch 'x86(?!_64)' -and
+              ($_.name -match 'windows' -or $_.name -match 'win' -or $_.name -match 'Windows')
+            } | Select-Object -First 1
+          }
           
           if (-not $windowsAsset) {
             Write-Host "::error::Windows asset not found in release $($releaseInfo.tag_name)"
@@ -177,8 +193,34 @@ jobs:
           if ($halideLibDir -and (Test-Path $halideLibDir)) {
             $libFiles = Get-ChildItem -Path $halideLibDir -Filter "Halide.lib" -Recurse
             if ($libFiles) {
-              Copy-Item -Path $libFiles[0].FullName -Destination $targetLibDir -Force
-              Write-Host "✓ Halide.lib copied from $($libFiles[0].FullName)"
+              $sourceLib = $libFiles[0].FullName
+              Copy-Item -Path $sourceLib -Destination $targetLibDir -Force
+              Write-Host "✓ Halide.lib copied from $sourceLib"
+              
+              # 64bit版であることを検証
+              Write-Host "Verifying Halide.lib architecture..."
+              $copiedLib = Join-Path $targetLibDir "Halide.lib"
+              if (Test-Path $copiedLib) {
+                # dumpbin を使用して機械種別を確認
+                $dumpbinOutput = & dumpbin /headers $copiedLib 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                  $machineType = $dumpbinOutput | Select-String -Pattern "machine \(([^)]+)\)"
+                  if ($machineType) {
+                    $arch = $machineType.Matches[0].Groups[1].Value
+                    Write-Host "Detected machine type: $arch"
+                    if ($arch -notmatch "x64|8664|AMD64") {
+                      Write-Host "::error::Halide.lib is not 64bit (detected: $arch)"
+                      Write-Host "This will cause linker errors. Please ensure the downloaded Halide release contains x64 libraries."
+                      exit 1
+                    }
+                    Write-Host "✓ Halide.lib is 64bit"
+                  } else {
+                    Write-Host "⚠ Could not determine machine type from dumpbin output"
+                  }
+                } else {
+                  Write-Host "⚠ dumpbin failed, skipping architecture verification"
+                }
+              }
             } else {
               Write-Host "::error::Halide.lib not found in $halideLibDir"
               Write-Host "Files in lib directory:"
