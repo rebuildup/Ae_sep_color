@@ -65,8 +65,15 @@ jobs:
         run: |
           echo "Attempting to fetch Git LFS files..."
           echo "Note: If LFS budget is exceeded, this step will fail but build will continue"
-          if git lfs fetch --all 2>&1 | grep -q "exceeded its LFS budget"; then
+          FETCH_OUTPUT=$(git lfs fetch --all 2>&1) || FETCH_EXIT=$?
+          if echo "$FETCH_OUTPUT" | grep -q "exceeded its LFS budget"; then
             echo "::warning::LFS budget exceeded. Skipping LFS file fetch. Build will continue without LFS files."
+            echo "$FETCH_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$FETCH_EXIT" ] && [ "$FETCH_EXIT" -ne 0 ]; then
+            echo "::warning::LFS fetch failed with exit code $FETCH_EXIT"
+            echo "$FETCH_OUTPUT"
             exit 0
           fi
           git lfs checkout || echo "Warning: git lfs checkout failed"
