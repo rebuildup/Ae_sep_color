@@ -62,14 +62,16 @@ bool SepColorHalide_Render8(PF_InData *in_data,
 
     // Load input as interleaved buffer (RGBA)
     Halide::Buffer<uint8_t> in_buf((uint8_t *)input_pixels, width, height, 4);
-    in_buf.dim(0).set_stride(4);
-    in_buf.dim(1).set_stride(in_stride_px);
-    in_buf.dim(2).set_stride(1);
+    halide_buffer_t *in_raw = in_buf.raw_buffer();
+    in_raw->dim[0].stride = 4;            // x dimension (next pixel)
+    in_raw->dim[1].stride = in_stride_px; // y dimension (row stride in pixels)
+    in_raw->dim[2].stride = 1;            // channel interleaved
 
     Halide::Buffer<uint8_t> out_buf((uint8_t *)output_pixels, width, height, 4);
-    out_buf.dim(0).set_stride(4);
-    out_buf.dim(1).set_stride(out_stride_px);
-    out_buf.dim(2).set_stride(1);
+    halide_buffer_t *out_raw = out_buf.raw_buffer();
+    out_raw->dim[0].stride = 4;
+    out_raw->dim[1].stride = out_stride_px;
+    out_raw->dim[2].stride = 1;
 
     // Blend per channel; preserve alpha
     Expr a = cast<float>(in_buf(x, y, 3)) / 255.0f;
