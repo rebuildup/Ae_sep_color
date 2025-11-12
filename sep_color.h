@@ -49,11 +49,11 @@ enum
 	ID_INPUT = 0,		// 0: input layer
 	ID_ANCHOR_POINT,	// 1: Anchor Point
 	ID_MODE,			// 2: Popup Line|Circle
-	ID_AA,				// 3: Anti-Alias Off|On
+	ID_AA,				// 3: (未使用) アンチエイリアスは常時ONのため削除
 	ID_ANGLE,			// 4: Angle
 	ID_RADIUS,			// 5: Radius
 	ID_COLOR,			// 6: Color
-	SKELETON_NUM_PARAMS // total count
+	SKELETON_NUM_PARAMS // total count (ID_INPUTを除く実際のパラメータ数は6)
 };
 
 extern "C"

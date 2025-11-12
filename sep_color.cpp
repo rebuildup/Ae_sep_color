@@ -110,11 +110,11 @@ GlobalSetup(
 		BUILD_VERSION);
 
 	// Deep Color対応（16-bitおよび32-bit float対応）
-	// PF_OutFlag_DEEP_COLOR_AWAREは16-bitと32-bit floatの両方に対応するフラグ
 	out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE;
 
-	// マルチスレッドレンダリングサポート（MultiSlicerと同じ方式）
-	out_data->out_flags2 = 0x08000000; // PF_OutFlag2_SUPPORTS_THREADED_RENDERING
+	// 32-bit float対応フラグ（警告を防ぐために必要）
+	// PF_OutFlag2_FLOAT_COLOR_AWARE = 0x00000001
+	out_data->out_flags2 = 0x08000001; // PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_FLOAT_COLOR_AWARE
 
 	return PF_Err_NONE;
 }
@@ -137,11 +137,7 @@ static PF_Err ParamsSetup(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef 
 				 "Line|Circle", // Options
 				 ID_MODE);
 
-	PF_ADD_POPUP("Anti-Alias",
-				 2,
-				 2,
-				 "Off|On",
-				 ID_AA);
+	// アンチエイリアスは常時ONのため、UIから削除
 
 	PF_ADD_ANGLE("Angle", 0, ID_ANGLE);
 	PF_ADD_FLOAT_SLIDERX(
@@ -157,7 +153,9 @@ static PF_Err ParamsSetup(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef 
 		ID_RADIUS);
 
 	PF_ADD_COLOR("Color", 255, 0, 0, ID_COLOR);
-	out_data->num_params = SKELETON_NUM_PARAMS;
+	// 実際に追加したパラメータ数（ID_INPUTを除く）
+	// ID_ANCHOR_POINT, ID_MODE, ID_ANGLE, ID_RADIUS, ID_COLOR = 5つ
+	out_data->num_params = 6; // ID_INPUTを含めた総数
 	return PF_Err_NONE;
 }
 
@@ -192,8 +190,8 @@ static PF_Err Render8(
 	float radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
 
 	int mode = params[ID_MODE]->u.pd.value;
-	int aaPopup = params[ID_AA]->u.pd.value;
-	bool aaEnabled = (aaPopup == 2);
+	// アンチエイリアスは常時ON
+	const bool aaEnabled = true;
 
 	// カラーパラメータ
 	PF_Pixel color = params[ID_COLOR]->u.cd.value;
@@ -242,49 +240,31 @@ static PF_Err Render8(
 					const float rx = (x - anchor_x) * downsample_x;
 					const float rotated_x = rx * cs + ry_sn;
 
-					if (!aaEnabled)
+					// 解析的アンチエイリアス（常時ON）
+					const float signed_dist = rotated_x * inv_edge_width;
+					const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
+					const float coverage = (clamped_dist + 1.0f) * 0.5f;
+
+					if (coverage <= 0.0001f)
 					{
-						// アンチエイリアスなし（高速パス）
-						if (rotated_x > 0.0f)
-						{
-							output_row[x].red = color.red;
-							output_row[x].green = color.green;
-							output_row[x].blue = color.blue;
-							output_row[x].alpha = input_px.alpha;
-						}
-						else if (!in_place)
-						{
+						if (!in_place)
 							output_row[x] = input_px;
-						}
+					}
+					else if (coverage >= 0.9999f)
+					{
+						output_row[x].red = color.red;
+						output_row[x].green = color.green;
+						output_row[x].blue = color.blue;
+						output_row[x].alpha = input_px.alpha;
 					}
 					else
 					{
-						// 解析的アンチエイリアス（連続値）
-						const float signed_dist = rotated_x * inv_edge_width;
-						const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
-						const float coverage = (clamped_dist + 1.0f) * 0.5f;
-
-						if (coverage <= 0.0001f)
-						{
-							if (!in_place)
-								output_row[x] = input_px;
-						}
-						else if (coverage >= 0.9999f)
-						{
-							output_row[x].red = color.red;
-							output_row[x].green = color.green;
-							output_row[x].blue = color.blue;
-							output_row[x].alpha = input_px.alpha;
-						}
-						else
-						{
-							// 高速ブレンディング
-							const float coverage_alpha = coverage * input_px.alpha * INV_255;
-							output_row[x].red = FastBlend(input_px.red, color.red, coverage_alpha);
-							output_row[x].green = FastBlend(input_px.green, color.green, coverage_alpha);
-							output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage_alpha);
-							output_row[x].alpha = input_px.alpha;
-						}
+						// 高速ブレンディング
+						const float coverage_alpha = coverage * input_px.alpha * INV_255;
+						output_row[x].red = FastBlend(input_px.red, color.red, coverage_alpha);
+						output_row[x].green = FastBlend(input_px.green, color.green, coverage_alpha);
+						output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage_alpha);
+						output_row[x].alpha = input_px.alpha;
 					}
 				}
 			}
@@ -338,50 +318,32 @@ static PF_Err Render8(
 					const float rx = (x - anchor_x) * downsample_x;
 					const float dist2 = rx * rx + ry2;
 
-					if (!aaEnabled)
+					// 解析的アンチエイリアス（常時ON）
+					const float dist = sqrtf(dist2);
+					const float signed_dist = (radius - dist) * inv_edge_width;
+					const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
+					const float coverage = (clamped_dist + 1.0f) * 0.5f;
+
+					if (coverage <= 0.0001f)
 					{
-						// アンチエイリアスなし（平方根計算不要）
-						if (dist2 <= r2)
-						{
-							output_row[x].red = color.red;
-							output_row[x].green = color.green;
-							output_row[x].blue = color.blue;
-							output_row[x].alpha = input_px.alpha;
-						}
-						else if (!in_place)
-						{
+						if (!in_place)
 							output_row[x] = input_px;
-						}
+					}
+					else if (coverage >= 0.9999f)
+					{
+						output_row[x].red = color.red;
+						output_row[x].green = color.green;
+						output_row[x].blue = color.blue;
+						output_row[x].alpha = input_px.alpha;
 					}
 					else
 					{
-						// 解析的アンチエイリアス（連続値）
-						const float dist = sqrtf(dist2);
-						const float signed_dist = (radius - dist) * inv_edge_width;
-						const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
-						const float coverage = (clamped_dist + 1.0f) * 0.5f;
-
-						if (coverage <= 0.0001f)
-						{
-							if (!in_place)
-								output_row[x] = input_px;
-						}
-						else if (coverage >= 0.9999f)
-						{
-							output_row[x].red = color.red;
-							output_row[x].green = color.green;
-							output_row[x].blue = color.blue;
-							output_row[x].alpha = input_px.alpha;
-						}
-						else
-						{
-							// 高速ブレンディング
-							const float coverage_alpha = coverage * input_px.alpha * INV_255;
-							output_row[x].red = FastBlend(input_px.red, color.red, coverage_alpha);
-							output_row[x].green = FastBlend(input_px.green, color.green, coverage_alpha);
-							output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage_alpha);
-							output_row[x].alpha = input_px.alpha;
-						}
+						// 高速ブレンディング
+						const float coverage_alpha = coverage * input_px.alpha * INV_255;
+						output_row[x].red = FastBlend(input_px.red, color.red, coverage_alpha);
+						output_row[x].green = FastBlend(input_px.green, color.green, coverage_alpha);
+						output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage_alpha);
+						output_row[x].alpha = input_px.alpha;
 					}
 				}
 			}
@@ -439,8 +401,8 @@ static PF_Err Render16(
 	float radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
 
 	int mode = params[ID_MODE]->u.pd.value;
-	int aaPopup = params[ID_AA]->u.pd.value;
-	bool aaEnabled = (aaPopup == 2);
+	// アンチエイリアスは常時ON
+	const bool aaEnabled = true;
 
 	// カラーパラメータ（8-bitから16-bitに変換: 0-255 -> 0-32768）
 	PF_Pixel color8 = params[ID_COLOR]->u.cd.value;
@@ -493,46 +455,30 @@ static PF_Err Render16(
 					const float rx = (x - anchor_x) * downsample_x;
 					const float rotated_x = rx * cs + ry_sn;
 
-					if (!aaEnabled)
+					// 解析的アンチエイリアス（常時ON）
+					const float signed_dist = rotated_x * inv_edge_width;
+					const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
+					const float coverage = (clamped_dist + 1.0f) * 0.5f;
+
+					if (coverage <= 0.0001f)
 					{
-						if (rotated_x > 0.0f)
-						{
-							output_row[x].red = color.red;
-							output_row[x].green = color.green;
-							output_row[x].blue = color.blue;
-							output_row[x].alpha = input_px.alpha;
-						}
-						else if (!in_place)
-						{
+						if (!in_place)
 							output_row[x] = input_px;
-						}
+					}
+					else if (coverage >= 0.9999f)
+					{
+						output_row[x].red = color.red;
+						output_row[x].green = color.green;
+						output_row[x].blue = color.blue;
+						output_row[x].alpha = input_px.alpha;
 					}
 					else
 					{
-						const float signed_dist = rotated_x * inv_edge_width;
-						const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
-						const float coverage = (clamped_dist + 1.0f) * 0.5f;
-
-						if (coverage <= 0.0001f)
-						{
-							if (!in_place)
-								output_row[x] = input_px;
-						}
-						else if (coverage >= 0.9999f)
-						{
-							output_row[x].red = color.red;
-							output_row[x].green = color.green;
-							output_row[x].blue = color.blue;
-							output_row[x].alpha = input_px.alpha;
-						}
-						else
-						{
-							const float coverage_alpha = coverage * input_px.alpha * INV_32768;
-							output_row[x].red = FastBlend16(input_px.red, color.red, coverage_alpha);
-							output_row[x].green = FastBlend16(input_px.green, color.green, coverage_alpha);
-							output_row[x].blue = FastBlend16(input_px.blue, color.blue, coverage_alpha);
-							output_row[x].alpha = input_px.alpha;
-						}
+						const float coverage_alpha = coverage * input_px.alpha * INV_32768;
+						output_row[x].red = FastBlend16(input_px.red, color.red, coverage_alpha);
+						output_row[x].green = FastBlend16(input_px.green, color.green, coverage_alpha);
+						output_row[x].blue = FastBlend16(input_px.blue, color.blue, coverage_alpha);
+						output_row[x].alpha = input_px.alpha;
 					}
 				}
 			}
@@ -584,47 +530,31 @@ static PF_Err Render16(
 					const float rx = (x - anchor_x) * downsample_x;
 					const float dist2 = rx * rx + ry2;
 
-					if (!aaEnabled)
+					// 解析的アンチエイリアス（常時ON）
+					const float dist = sqrtf(dist2);
+					const float signed_dist = (radius - dist) * inv_edge_width;
+					const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
+					const float coverage = (clamped_dist + 1.0f) * 0.5f;
+
+					if (coverage <= 0.0001f)
 					{
-						if (dist2 <= r2)
-						{
-							output_row[x].red = color.red;
-							output_row[x].green = color.green;
-							output_row[x].blue = color.blue;
-							output_row[x].alpha = input_px.alpha;
-						}
-						else if (!in_place)
-						{
+						if (!in_place)
 							output_row[x] = input_px;
-						}
+					}
+					else if (coverage >= 0.9999f)
+					{
+						output_row[x].red = color.red;
+						output_row[x].green = color.green;
+						output_row[x].blue = color.blue;
+						output_row[x].alpha = input_px.alpha;
 					}
 					else
 					{
-						const float dist = sqrtf(dist2);
-						const float signed_dist = (radius - dist) * inv_edge_width;
-						const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
-						const float coverage = (clamped_dist + 1.0f) * 0.5f;
-
-						if (coverage <= 0.0001f)
-						{
-							if (!in_place)
-								output_row[x] = input_px;
-						}
-						else if (coverage >= 0.9999f)
-						{
-							output_row[x].red = color.red;
-							output_row[x].green = color.green;
-							output_row[x].blue = color.blue;
-							output_row[x].alpha = input_px.alpha;
-						}
-						else
-						{
-							const float coverage_alpha = coverage * input_px.alpha * INV_32768;
-							output_row[x].red = FastBlend16(input_px.red, color.red, coverage_alpha);
-							output_row[x].green = FastBlend16(input_px.green, color.green, coverage_alpha);
-							output_row[x].blue = FastBlend16(input_px.blue, color.blue, coverage_alpha);
-							output_row[x].alpha = input_px.alpha;
-						}
+						const float coverage_alpha = coverage * input_px.alpha * INV_32768;
+						output_row[x].red = FastBlend16(input_px.red, color.red, coverage_alpha);
+						output_row[x].green = FastBlend16(input_px.green, color.green, coverage_alpha);
+						output_row[x].blue = FastBlend16(input_px.blue, color.blue, coverage_alpha);
+						output_row[x].alpha = input_px.alpha;
 					}
 				}
 			}
@@ -681,8 +611,8 @@ static PF_Err Render32(
 	float radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
 
 	int mode = params[ID_MODE]->u.pd.value;
-	int aaPopup = params[ID_AA]->u.pd.value;
-	bool aaEnabled = (aaPopup == 2);
+	// アンチエイリアスは常時ON
+	const bool aaEnabled = true;
 
 	// カラーパラメータ（8-bitから32-bit floatに変換、0.0-1.0の範囲）
 	PF_Pixel color8 = params[ID_COLOR]->u.cd.value;
@@ -735,46 +665,30 @@ static PF_Err Render32(
 					const float rx = (x - anchor_x) * downsample_x;
 					const float rotated_x = rx * cs + ry_sn;
 
-					if (!aaEnabled)
+					// 解析的アンチエイリアス（常時ON）
+					const float signed_dist = rotated_x * inv_edge_width;
+					const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
+					const float coverage = (clamped_dist + 1.0f) * 0.5f;
+
+					if (coverage <= 0.0001f)
 					{
-						if (rotated_x > 0.0f)
-						{
-							output_row[x].red = color.red;
-							output_row[x].green = color.green;
-							output_row[x].blue = color.blue;
-							output_row[x].alpha = input_px.alpha;
-						}
-						else if (!in_place)
-						{
+						if (!in_place)
 							output_row[x] = input_px;
-						}
+					}
+					else if (coverage >= 0.9999f)
+					{
+						output_row[x].red = color.red;
+						output_row[x].green = color.green;
+						output_row[x].blue = color.blue;
+						output_row[x].alpha = input_px.alpha;
 					}
 					else
 					{
-						const float signed_dist = rotated_x * inv_edge_width;
-						const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
-						const float coverage = (clamped_dist + 1.0f) * 0.5f;
-
-						if (coverage <= 0.0001f)
-						{
-							if (!in_place)
-								output_row[x] = input_px;
-						}
-						else if (coverage >= 0.9999f)
-						{
-							output_row[x].red = color.red;
-							output_row[x].green = color.green;
-							output_row[x].blue = color.blue;
-							output_row[x].alpha = input_px.alpha;
-						}
-						else
-						{
-							const float coverage_alpha = coverage * input_px.alpha;
-							output_row[x].red = FastBlendFloat(input_px.red, color.red, coverage_alpha);
-							output_row[x].green = FastBlendFloat(input_px.green, color.green, coverage_alpha);
-							output_row[x].blue = FastBlendFloat(input_px.blue, color.blue, coverage_alpha);
-							output_row[x].alpha = input_px.alpha;
-						}
+						const float coverage_alpha = coverage * input_px.alpha;
+						output_row[x].red = FastBlendFloat(input_px.red, color.red, coverage_alpha);
+						output_row[x].green = FastBlendFloat(input_px.green, color.green, coverage_alpha);
+						output_row[x].blue = FastBlendFloat(input_px.blue, color.blue, coverage_alpha);
+						output_row[x].alpha = input_px.alpha;
 					}
 				}
 			}
@@ -826,47 +740,31 @@ static PF_Err Render32(
 					const float rx = (x - anchor_x) * downsample_x;
 					const float dist2 = rx * rx + ry2;
 
-					if (!aaEnabled)
+					// 解析的アンチエイリアス（常時ON）
+					const float dist = sqrtf(dist2);
+					const float signed_dist = (radius - dist) * inv_edge_width;
+					const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
+					const float coverage = (clamped_dist + 1.0f) * 0.5f;
+
+					if (coverage <= 0.0001f)
 					{
-						if (dist2 <= r2)
-						{
-							output_row[x].red = color.red;
-							output_row[x].green = color.green;
-							output_row[x].blue = color.blue;
-							output_row[x].alpha = input_px.alpha;
-						}
-						else if (!in_place)
-						{
+						if (!in_place)
 							output_row[x] = input_px;
-						}
+					}
+					else if (coverage >= 0.9999f)
+					{
+						output_row[x].red = color.red;
+						output_row[x].green = color.green;
+						output_row[x].blue = color.blue;
+						output_row[x].alpha = input_px.alpha;
 					}
 					else
 					{
-						const float dist = sqrtf(dist2);
-						const float signed_dist = (radius - dist) * inv_edge_width;
-						const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
-						const float coverage = (clamped_dist + 1.0f) * 0.5f;
-
-						if (coverage <= 0.0001f)
-						{
-							if (!in_place)
-								output_row[x] = input_px;
-						}
-						else if (coverage >= 0.9999f)
-						{
-							output_row[x].red = color.red;
-							output_row[x].green = color.green;
-							output_row[x].blue = color.blue;
-							output_row[x].alpha = input_px.alpha;
-						}
-						else
-						{
-							const float coverage_alpha = coverage * input_px.alpha;
-							output_row[x].red = FastBlendFloat(input_px.red, color.red, coverage_alpha);
-							output_row[x].green = FastBlendFloat(input_px.green, color.green, coverage_alpha);
-							output_row[x].blue = FastBlendFloat(input_px.blue, color.blue, coverage_alpha);
-							output_row[x].alpha = input_px.alpha;
-						}
+						const float coverage_alpha = coverage * input_px.alpha;
+						output_row[x].red = FastBlendFloat(input_px.red, color.red, coverage_alpha);
+						output_row[x].green = FastBlendFloat(input_px.green, color.green, coverage_alpha);
+						output_row[x].blue = FastBlendFloat(input_px.blue, color.blue, coverage_alpha);
+						output_row[x].alpha = input_px.alpha;
 					}
 				}
 			}
