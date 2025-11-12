@@ -100,16 +100,70 @@ jobs:
           $halideExtractDir = "$env:TEMP\Halide-windows"
           Expand-Archive -Path $halideZip -DestinationPath $halideExtractDir -Force
           
+          Write-Host "Extracted directory structure:"
+          Get-ChildItem -Path $halideExtractDir -Recurse -Directory | Select-Object -First 10 | ForEach-Object { Write-Host "  $($_.FullName)" }
+          
           # Halideのディレクトリ構造を確認して、適切な場所にコピー
           $halideRoot = Get-ChildItem -Path $halideExtractDir -Directory | Select-Object -First 1
           if (-not $halideRoot) {
             # ディレクトリがない場合、直接ファイルが展開されている可能性がある
-            $halideRoot = $halideExtractDir
+            Write-Host "No subdirectory found, using extract directory as root"
+            $halideRoot = New-Object PSObject -Property @{ FullName = $halideExtractDir }
+          } else {
+            Write-Host "Found Halide root directory: $($halideRoot.FullName)"
           }
           
-          $halideLibDir = Join-Path $halideRoot.FullName "lib"
-          $halideBinDir = Join-Path $halideRoot.FullName "bin"
-          $halideIncludeDir = Join-Path $halideRoot.FullName "include"
+          # 複数のパスを試す
+          $possibleLibPaths = @(
+            Join-Path $halideRoot.FullName "lib",
+            Join-Path $halideRoot.FullName "lib\x64",
+            Join-Path $halideRoot.FullName "lib\Release",
+            Join-Path $halideExtractDir "lib",
+            Join-Path $halideExtractDir "lib\x64"
+          )
+          
+          $possibleBinPaths = @(
+            Join-Path $halideRoot.FullName "bin",
+            Join-Path $halideRoot.FullName "bin\x64",
+            Join-Path $halideRoot.FullName "bin\Release",
+            Join-Path $halideExtractDir "bin",
+            Join-Path $halideExtractDir "bin\x64"
+          )
+          
+          $possibleIncludePaths = @(
+            Join-Path $halideRoot.FullName "include",
+            Join-Path $halideExtractDir "include"
+          )
+          
+          # libディレクトリを探す
+          $halideLibDir = $null
+          foreach ($path in $possibleLibPaths) {
+            if (Test-Path $path) {
+              $halideLibDir = $path
+              Write-Host "Found lib directory: $halideLibDir"
+              break
+            }
+          }
+          
+          # binディレクトリを探す
+          $halideBinDir = $null
+          foreach ($path in $possibleBinPaths) {
+            if (Test-Path $path) {
+              $halideBinDir = $path
+              Write-Host "Found bin directory: $halideBinDir"
+              break
+            }
+          }
+          
+          # includeディレクトリを探す
+          $halideIncludeDir = $null
+          foreach ($path in $possibleIncludePaths) {
+            if (Test-Path $path) {
+              $halideIncludeDir = $path
+              Write-Host "Found include directory: $halideIncludeDir"
+              break
+            }
+          }
           
           # 必要なディレクトリを作成
           $targetLibDir = "third_party\halide\win\lib"
@@ -120,22 +174,44 @@ jobs:
           New-Item -ItemType Directory -Path $targetBinDir -Force | Out-Null
           
           # ファイルをコピー
-          if (Test-Path $halideLibDir) {
-            Copy-Item -Path "$halideLibDir\Halide.lib" -Destination $targetLibDir -Force
-            Write-Host "✓ Halide.lib copied"
+          if ($halideLibDir -and (Test-Path $halideLibDir)) {
+            $libFiles = Get-ChildItem -Path $halideLibDir -Filter "Halide.lib" -Recurse
+            if ($libFiles) {
+              Copy-Item -Path $libFiles[0].FullName -Destination $targetLibDir -Force
+              Write-Host "✓ Halide.lib copied from $($libFiles[0].FullName)"
+            } else {
+              Write-Host "::error::Halide.lib not found in $halideLibDir"
+              Write-Host "Files in lib directory:"
+              Get-ChildItem -Path $halideLibDir -Recurse | Select-Object -First 10 | ForEach-Object { Write-Host "  $($_.FullName)" }
+              exit 1
+            }
           } else {
-            Write-Error "Halide lib directory not found: $halideLibDir"
+            Write-Host "::error::Halide lib directory not found"
+            Write-Host "Searched paths:"
+            $possibleLibPaths | ForEach-Object { Write-Host "  $_" }
             exit 1
           }
-          if (Test-Path $halideBinDir) {
-            Copy-Item -Path "$halideBinDir\Halide.dll" -Destination $targetBinDir -Force
-            Write-Host "✓ Halide.dll copied"
+          
+          if ($halideBinDir -and (Test-Path $halideBinDir)) {
+            $dllFiles = Get-ChildItem -Path $halideBinDir -Filter "Halide.dll" -Recurse
+            if ($dllFiles) {
+              Copy-Item -Path $dllFiles[0].FullName -Destination $targetBinDir -Force
+              Write-Host "✓ Halide.dll copied from $($dllFiles[0].FullName)"
+            } else {
+              Write-Host "::error::Halide.dll not found in $halideBinDir"
+              Write-Host "Files in bin directory:"
+              Get-ChildItem -Path $halideBinDir -Recurse | Select-Object -First 10 | ForEach-Object { Write-Host "  $($_.FullName)" }
+              exit 1
+            }
           } else {
-            Write-Error "Halide bin directory not found: $halideBinDir"
+            Write-Host "::error::Halide bin directory not found"
+            Write-Host "Searched paths:"
+            $possibleBinPaths | ForEach-Object { Write-Host "  $_" }
             exit 1
           }
+          
           # ヘッダーファイルは既にリポジトリに含まれている可能性があるため、存在する場合のみコピー
-          if (Test-Path $halideIncludeDir) {
+          if ($halideIncludeDir -and (Test-Path $halideIncludeDir)) {
             if (-not (Test-Path $targetIncludeDir)) {
               New-Item -ItemType Directory -Path $targetIncludeDir -Force | Out-Null
             }
