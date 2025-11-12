@@ -12,7 +12,7 @@
 
 // Feature switches (safe defaults). Toggle in project C/C++ Preprocessor Definitions if needed.
 #ifndef SEP_COLOR_USE_PF_ITERATE
-#define SEP_COLOR_USE_PF_ITERATE 0
+#define SEP_COLOR_USE_PF_ITERATE 1
 #endif
 #ifndef SEP_COLOR_ENABLE_HALIDE
 #define SEP_COLOR_ENABLE_HALIDE 0
@@ -21,7 +21,7 @@
 #define SEP_COLOR_FAST_SQRT 0
 #endif
 #ifndef SEP_COLOR_USE_BASELINE
-#define SEP_COLOR_USE_BASELINE 1
+#define SEP_COLOR_USE_BASELINE 0
 #endif
 #include "sep_color_halide.h"
 
