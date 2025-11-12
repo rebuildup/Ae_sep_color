@@ -78,41 +78,60 @@ jobs:
           $releaseInfo.assets | ForEach-Object { Write-Host "  - $($_.name)" }
           
           # Windows用のアセットを検索（x64版を優先、x86版は明示的に除外）
-          # 優先順位: x64を含む（x86を含まない） > win64 > windows/winを含む（x86を含まない）
+          # 優先順位: x64を含む > win64 > windows/winを含む（x86を明示的に含むものは除外）
           $windowsAsset = $null
           
-          Write-Host "Searching for Windows x64 asset..."
+          Write-Host "Searching for Windows asset..."
           
-          # まず x64 または win64 を含むものを探す（x86 を明示的に除外）
+          # まず x64 または win64 を含むものを優先的に探す
           $windowsAsset = $releaseInfo.assets | Where-Object {
             $_.name -match '\.zip$' -and 
             ($_.name -match 'x64' -or $_.name -match 'x86_64' -or $_.name -match 'win64') -and
-            $_.name -notmatch '\bx86\b' -and
             ($_.name -match 'windows' -or $_.name -match 'win' -or $_.name -match 'Windows')
           } | Select-Object -First 1
           
           if ($windowsAsset) {
             Write-Host "Found x64 asset: $($windowsAsset.name)"
           } else {
-            Write-Host "x64 asset not found, searching for Windows asset without x86..."
+            Write-Host "x64 asset not found, searching for any Windows asset (excluding explicit x86)..."
             
-            # x64 が見つからない場合、x86 を含まないものを探す
+            # x64 が見つからない場合、x86 を明示的に含まない Windows アセットを探す
             $windowsAsset = $releaseInfo.assets | Where-Object {
               $_.name -match '\.zip$' -and 
+              ($_.name -match 'windows' -or $_.name -match 'win' -or $_.name -match 'Windows') -and
               $_.name -notmatch '\bx86\b' -and
               $_.name -notmatch 'i386' -and
-              ($_.name -match 'windows' -or $_.name -match 'win' -or $_.name -match 'Windows')
+              $_.name -notmatch '32-bit' -and
+              $_.name -notmatch '32bit'
             } | Select-Object -First 1
             
             if ($windowsAsset) {
-              Write-Host "Found Windows asset (x86 not explicitly mentioned): $($windowsAsset.name)"
+              Write-Host "Found Windows asset: $($windowsAsset.name)"
               Write-Host "::warning::This asset may not be 64bit. Will verify after download."
+            } else {
+              # 最後の手段: x86 を明示的に含むもの以外の Windows アセットを探す
+              Write-Host "Searching for any Windows asset (will verify architecture after download)..."
+              $windowsAsset = $releaseInfo.assets | Where-Object {
+                $_.name -match '\.zip$' -and 
+                ($_.name -match 'windows' -or $_.name -match 'win' -or $_.name -match 'Windows')
+              } | Where-Object {
+                # x86 を明示的に含むものは除外
+                $_.name -notmatch '\bx86\b' -and
+                $_.name -notmatch 'i386' -and
+                $_.name -notmatch '32-bit' -and
+                $_.name -notmatch '32bit'
+              } | Select-Object -First 1
+              
+              if ($windowsAsset) {
+                Write-Host "Found Windows asset: $($windowsAsset.name)"
+                Write-Host "::warning::Architecture not specified in name. Will verify after download."
+              }
             }
           }
           
-          # それでも見つからない場合、エラーにする（32bit 版をダウンロードしない）
+          # それでも見つからない場合、エラーにする
           if (-not $windowsAsset) {
-            Write-Host "::error::No suitable Windows asset found (x64 or non-x86)"
+            Write-Host "::error::No Windows asset found"
             Write-Host "Available Windows-related assets:"
             $releaseInfo.assets | Where-Object {
               $_.name -match '\.zip$' -and 
