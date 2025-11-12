@@ -1,5 +1,4 @@
 #include "sep_color.h"
-#include "sep_color.h"
 #include "sep_color_Strings.h"
 
 #include <algorithm>
@@ -12,7 +11,7 @@
 
 // Feature switches (safe defaults). Toggle in project C/C++ Preprocessor Definitions if needed.
 #ifndef SEP_COLOR_USE_PF_ITERATE
-#define SEP_COLOR_USE_PF_ITERATE 0
+#define SEP_COLOR_USE_PF_ITERATE 1
 #endif
 #ifndef SEP_COLOR_ENABLE_HALIDE
 #define SEP_COLOR_ENABLE_HALIDE 1
@@ -23,7 +22,6 @@
 #ifndef SEP_COLOR_USE_BASELINE
 #define SEP_COLOR_USE_BASELINE 0
 #endif
-#include "sep_color_halide.h"
 
 // (forward declarations moved below with other fast paths)
 /**
@@ -94,13 +92,7 @@ static inline float FastBlendFloat(float src, float dst, float coverage_alpha)
 	return src + (dst - src) * coverage_alpha;
 }
 
-// Feature switches (safe defaults)
-#ifndef SEP_COLOR_USE_PF_ITERATE
-#define SEP_COLOR_USE_PF_ITERATE 0
-#endif
-#ifndef SEP_COLOR_ENABLE_HALIDE
-#define SEP_COLOR_ENABLE_HALIDE 0
-#endif
+// Feature switches are defined above
 
 // Forward decls for fast CPU paths
 static PF_Err Render8Fast(
@@ -144,6 +136,13 @@ struct IterateRefcon
 	float edge_width;
 	float inv_edge_width;
 	PF_Pixel color8;
+	// Precomputed for speed
+	float cs;
+	float sn;
+	float r_minus2;
+	float r_plus2;
+	A_u_short r16, g16, b16;
+	float rF, gF, bF;
 };
 
 static PF_Err IteratePix8(void *refcon, A_long x, A_long y, PF_Pixel *in, PF_Pixel *out)
@@ -159,17 +158,42 @@ static PF_Err IteratePix8(void *refcon, A_long x, A_long y, PF_Pixel *in, PF_Pix
 	float coverage = 0.0f;
 	if (rc->mode == 1)
 	{
-		const float cs = cosf(rc->angle);
-		const float sn = sinf(rc->angle);
-		const float rot_x = fx * cs + fy * sn;
+		const float rot_x = fx * rc->cs + fy * rc->sn;
+		if (rot_x <= -rc->edge_width)
+		{
+			*out = *in;
+			return PF_Err_NONE;
+		}
+		if (rot_x >= rc->edge_width)
+		{
+			out->red = rc->color8.red;
+			out->green = rc->color8.green;
+			out->blue = rc->color8.blue;
+			out->alpha = in->alpha;
+			return PF_Err_NONE;
+		}
 		const float sd = rot_x * rc->inv_edge_width;
-		coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+		coverage = (sd + 1.0f) * 0.5f;
 	}
 	else
 	{
-		const float dist = sqrtf(fx * fx + fy * fy);
+		const float dist2 = fx * fx + fy * fy;
+		if (dist2 >= rc->r_plus2)
+		{
+			*out = *in;
+			return PF_Err_NONE;
+		}
+		if (dist2 <= rc->r_minus2)
+		{
+			out->red = rc->color8.red;
+			out->green = rc->color8.green;
+			out->blue = rc->color8.blue;
+			out->alpha = in->alpha;
+			return PF_Err_NONE;
+		}
+		const float dist = sqrtf(dist2);
 		const float sd = (rc->radius - dist) * rc->inv_edge_width;
-		coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+		coverage = (sd + 1.0f) * 0.5f;
 	}
 	if (coverage <= 0.0001f)
 	{
@@ -217,8 +241,29 @@ static PF_Err Render8Iterate(
 	rc.inv_edge_width = 1.0f / rc.edge_width;
 	rc.color8 = params[ID_COLOR]->u.cd.value;
 
+	// Precompute for speed
+	rc.cs = cosf(rc.angle);
+	rc.sn = sinf(rc.angle);
+	const float r_minus8 = rc.radius - rc.edge_width;
+	const float r_plus8 = rc.radius + rc.edge_width;
+	rc.r_minus2 = r_minus8 * r_minus8;
+	rc.r_plus2 = r_plus8 * r_plus8;
+
 	AEGP_SuiteHandler suites(in_data->pica_basicP);
 	PF_Rect area{0, 0, output->width, output->height};
+	if (rc.mode != 1)
+	{
+		const float ex = (rc.radius + rc.edge_width) / std::max(rc.downsample_x, 1e-6f);
+		const float ey = (rc.radius + rc.edge_width) / std::max(rc.downsample_y, 1e-6f);
+		const int x0 = std::max(0, static_cast<int>(std::floor(rc.anchor_x - ex)));
+		const int x1 = std::min(rc.width, static_cast<int>(std::ceil(rc.anchor_x + ex)) + 1);
+		const int y0 = std::max(0, static_cast<int>(std::floor(rc.anchor_y - ey)));
+		const int y1 = std::min(rc.height, static_cast<int>(std::ceil(rc.anchor_y + ey)) + 1);
+		area.left = x0;
+		area.right = x1;
+		area.top = y0;
+		area.bottom = y1;
+	}
 	PF_EffectWorld *src = &params[0]->u.ld;
 	PF_Err err = suites.Iterate8Suite1()->iterate(
 		in_data,
@@ -247,37 +292,60 @@ static PF_Err IteratePix16(void *refcon, A_long x, A_long y, PF_Pixel16 *in, PF_
 	float coverage;
 	if (rc->mode == 1)
 	{
-		const float cs = cosf(rc->angle), sn = sinf(rc->angle);
-		const float rot_x = fx * cs + fy * sn;
+		const float rot_x = fx * rc->cs + fy * rc->sn;
+		if (rot_x <= -rc->edge_width)
+		{
+			*out = *in;
+			return PF_Err_NONE;
+		}
+		if (rot_x >= rc->edge_width)
+		{
+			out->red = rc->r16;
+			out->green = rc->g16;
+			out->blue = rc->b16;
+			out->alpha = in->alpha;
+			return PF_Err_NONE;
+		}
 		const float sd = rot_x * rc->inv_edge_width;
-		coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+		coverage = (sd + 1.0f) * 0.5f;
 	}
 	else
 	{
-		const float dist = sqrtf(fx * fx + fy * fy);
+		const float dist2 = fx * fx + fy * fy;
+		if (dist2 >= rc->r_plus2)
+		{
+			*out = *in;
+			return PF_Err_NONE;
+		}
+		if (dist2 <= rc->r_minus2)
+		{
+			out->red = rc->r16;
+			out->green = rc->g16;
+			out->blue = rc->b16;
+			out->alpha = in->alpha;
+			return PF_Err_NONE;
+		}
+		const float dist = sqrtf(dist2);
 		const float sd = (rc->radius - dist) * rc->inv_edge_width;
-		coverage = std::max(0.0f, std::min(1.0f, (sd + 1.0f) * 0.5f));
+		coverage = (sd + 1.0f) * 0.5f;
 	}
 	if (coverage <= 0.0001f)
 	{
 		*out = *in;
 		return PF_Err_NONE;
 	}
-	const A_u_short r = static_cast<A_u_short>((rc->color8.red * 32768 + 127) / 255);
-	const A_u_short g = static_cast<A_u_short>((rc->color8.green * 32768 + 127) / 255);
-	const A_u_short b = static_cast<A_u_short>((rc->color8.blue * 32768 + 127) / 255);
 	if (coverage >= 0.9999f)
 	{
-		out->red = r;
-		out->green = g;
-		out->blue = b;
+		out->red = rc->r16;
+		out->green = rc->g16;
+		out->blue = rc->b16;
 		out->alpha = in->alpha;
 		return PF_Err_NONE;
 	}
 	const float ca = coverage * (static_cast<float>(in->alpha) * INV_32768);
-	out->red = FastBlend16(in->red, r, ca);
-	out->green = FastBlend16(in->green, g, ca);
-	out->blue = FastBlend16(in->blue, b, ca);
+	out->red = FastBlend16(in->red, rc->r16, ca);
+	out->green = FastBlend16(in->green, rc->g16, ca);
+	out->blue = FastBlend16(in->blue, rc->b16, ca);
 	out->alpha = in->alpha;
 	return PF_Err_NONE;
 }
