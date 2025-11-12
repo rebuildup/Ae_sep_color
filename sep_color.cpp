@@ -116,7 +116,16 @@ GlobalSetup(
 	// ヘッダーファイルから正しい値を確認して設定
 	// PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000
 	// PF_OutFlag2_FLOAT_COLOR_AWARE = 0x00000001
-	out_data->out_flags2 = PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_FLOAT_COLOR_AWARE;
+	#ifdef PF_OutFlag2_SUPPORTS_THREADED_RENDERING
+		#ifdef PF_OutFlag2_FLOAT_COLOR_AWARE
+			out_data->out_flags2 = PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_FLOAT_COLOR_AWARE;
+		#else
+			out_data->out_flags2 = PF_OutFlag2_SUPPORTS_THREADED_RENDERING | 0x00000001;
+		#endif
+	#else
+		// マクロが定義されていない場合は直接値を設定
+		out_data->out_flags2 = 0x08000001; // 0x08000000 | 0x00000001
+	#endif
 
 	return PF_Err_NONE;
 }
