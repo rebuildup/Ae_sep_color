@@ -96,8 +96,8 @@ GlobalSetup(
 		STAGE_VERSION,
 		BUILD_VERSION);
 
-	// 8-bit対応（将来16-bit対応予定）
-	out_data->out_flags = PF_OutFlag_PIX_INDEPENDENT;
+	// Deep Color対応（16-bit対応）
+	out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE;
 
 	// マルチスレッドレンダリングサポート（MultiSlicerと同じ方式）
 	out_data->out_flags2 = 0x08000000; // PF_OutFlag2_SUPPORTS_THREADED_RENDERING
