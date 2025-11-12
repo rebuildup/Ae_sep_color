@@ -234,17 +234,6 @@ static PF_Err Render8Iterate(
 
 #if SEP_COLOR_USE_PF_ITERATE
 // 16-bit iterate helpers
-struct IterateRefcon
-{
-	int width, height;
-	int anchor_x, anchor_y;
-	float downsample_x, downsample_y;
-	float angle, radius;
-	int mode; // 1: Line, 2: Circle
-	float edge_width, inv_edge_width;
-	PF_Pixel color8;
-};
-
 static PF_Err IteratePix16(void *refcon, A_long x, A_long y, PF_Pixel16 *in, PF_Pixel16 *out)
 {
 	const IterateRefcon *rc = reinterpret_cast<const IterateRefcon *>(refcon);
