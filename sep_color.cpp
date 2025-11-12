@@ -6,6 +6,16 @@
 #include <cstdint>
 #include <thread>
 #include <vector>
+#include <cstring>
+
+// Forward declaration for optimized 8-bit renderer
+static PF_Err Render8Fast(
+	PF_InData *in_data,
+	PF_OutData *out_data,
+	PF_ParamDef *params[],
+	PF_LayerDef *output,
+	PF_Pixel *input_pixels,
+	PF_Pixel *output_pixels);
 
 /**
  * パフォーマンス最適化の概要（超高速化版 + ビット深度対応）:
@@ -215,6 +225,7 @@ static PF_Err Render8(
 		// Line mode - 超最適化版
 		const float cs = cosf(angle);
 		const float sn = sinf(angle);
+		const float rot_dx = downsample_x * cs;
 
 		auto process_rows = [&](int start_y, int end_y)
 		{
@@ -839,7 +850,7 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 			// 8-bit処理（デフォルト）
 			PF_Pixel *input_pixels = reinterpret_cast<PF_Pixel *>(input->data);
 			PF_Pixel *output_pixels = reinterpret_cast<PF_Pixel *>(output->data);
-			err = Render8(in_data, out_data, params, output, input_pixels, output_pixels);
+			err = Render8Fast(in_data, out_data, params, output, input_pixels, output_pixels);
 		}
 	}
 
@@ -902,5 +913,269 @@ EffectMain(
 	{
 		err = thrown_err;
 	}
+	return err;
+}
+
+// -------------------------------------------------------------
+// Optimized 8-bit renderer implementation
+// -------------------------------------------------------------
+static PF_Err Render8Fast(
+	PF_InData *in_data,
+	PF_OutData *out_data,
+	PF_ParamDef *params[],
+	PF_LayerDef *output,
+	PF_Pixel *input_pixels,
+	PF_Pixel *output_pixels)
+{
+	PF_Err err = PF_Err_NONE;
+
+	const int width = output->width;
+	const int height = output->height;
+
+	const float downsample_x = static_cast<float>(in_data->downsample_x.den) / static_cast<float>(in_data->downsample_x.num);
+	const float downsample_y = static_cast<float>(in_data->downsample_y.den) / static_cast<float>(in_data->downsample_y.num);
+
+	const int anchor_x = (params[ID_ANCHOR_POINT]->u.td.x_value >> 16);
+	const int anchor_y = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
+
+	float angle_param_value = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16);
+	angle_param_value = fmodf(angle_param_value, 360.0f);
+
+	const float pi_f = 3.14159265358979323846f;
+	const float angle = angle_param_value * (pi_f / 180.0f);
+	const float radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
+
+	const int mode = params[ID_MODE]->u.pd.value;
+
+	const PF_Pixel color = params[ID_COLOR]->u.cd.value;
+
+	const int num_threads = std::min<int>(std::max(1u, std::thread::hardware_concurrency()), std::max(1, height));
+	const int rows_per_thread = (height + num_threads - 1) / num_threads;
+
+	const int input_stride = output->rowbytes / sizeof(PF_Pixel);
+	const int output_stride = output->rowbytes / sizeof(PF_Pixel);
+	const bool in_place = (input_pixels == output_pixels);
+
+	const float edge_width = 0.707f;
+	const float inv_edge_width = 1.0f / edge_width;
+
+	if (mode == 1)
+	{
+		// Line mode
+		const float cs = cosf(angle);
+		const float sn = sinf(angle);
+		const float rot_dx = downsample_x * cs;
+
+		auto process_rows = [&](int start_y, int end_y)
+		{
+			for (int y = start_y; y < end_y; y++)
+			{
+				const PF_Pixel *input_row = input_pixels + y * input_stride;
+				PF_Pixel *output_row = output_pixels + y * output_stride;
+				const float ry = (y - anchor_y) * downsample_y;
+				const float ry_sn = ry * sn;
+
+				// Row-level early-outs
+				float rx0 = (0 - anchor_x) * downsample_x;
+				float rot_x0 = rx0 * cs + ry_sn;
+				float rot_xN = ((width - 1 - anchor_x) * downsample_x) * cs + ry_sn;
+				float row_min = std::min(rot_x0, rot_xN);
+				float row_max = std::max(rot_x0, rot_xN);
+				if (row_max <= -edge_width)
+				{
+					if (!in_place)
+						std::memcpy(output_row, input_row, sizeof(PF_Pixel) * width);
+					continue;
+				}
+				if (row_min >= edge_width)
+				{
+					for (int x = 0; x < width; ++x)
+					{
+						const PF_Pixel &inpx = input_row[x];
+						output_row[x].red = color.red;
+						output_row[x].green = color.green;
+						output_row[x].blue = color.blue;
+						output_row[x].alpha = inpx.alpha;
+					}
+					continue;
+				}
+
+				float rotated_x = rot_x0;
+				for (int x = 0; x < width; x++)
+				{
+					const PF_Pixel &input_px = input_row[x];
+					if (input_px.alpha == 0)
+					{
+						if (!in_place)
+							output_row[x] = input_px;
+						rotated_x += rot_dx;
+						continue;
+					}
+
+					const float signed_dist = rotated_x * inv_edge_width;
+					const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
+					const float coverage = (clamped_dist + 1.0f) * 0.5f;
+
+					if (coverage <= 0.0001f)
+					{
+						if (!in_place)
+							output_row[x] = input_px;
+					}
+					else if (coverage >= 0.9999f)
+					{
+						output_row[x].red = color.red;
+						output_row[x].green = color.green;
+						output_row[x].blue = color.blue;
+						output_row[x].alpha = input_px.alpha;
+					}
+					else
+					{
+						const float coverage_alpha = coverage * input_px.alpha * INV_255;
+						output_row[x].red = FastBlend(input_px.red, color.red, coverage_alpha);
+						output_row[x].green = FastBlend(input_px.green, color.green, coverage_alpha);
+						output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage_alpha);
+						output_row[x].alpha = input_px.alpha;
+					}
+
+					rotated_x += rot_dx;
+				}
+			}
+		};
+
+		std::vector<std::thread> threads;
+		threads.reserve(num_threads);
+		for (int t = 0; t < num_threads; t++)
+		{
+			int start_y = t * rows_per_thread;
+			int end_y = std::min(start_y + rows_per_thread, height);
+			if (start_y < height)
+			{
+				threads.emplace_back(process_rows, start_y, end_y);
+			}
+		}
+
+		for (auto &thread : threads)
+		{
+			thread.join();
+		}
+	}
+	else
+	{
+		// Circle mode
+		const float dx = downsample_x;
+		const float twodx = 2.0f * dx;
+		const float dx2 = dx * dx;
+		const float r_minus = radius - edge_width;
+		const float r_plus = radius + edge_width;
+		const float r_minus2 = r_minus * r_minus;
+		const float r_plus2 = r_plus * r_plus;
+
+		auto process_rows = [&](int start_y, int end_y)
+		{
+			for (int y = start_y; y < end_y; y++)
+			{
+				const PF_Pixel *input_row = input_pixels + y * input_stride;
+				PF_Pixel *output_row = output_pixels + y * output_stride;
+				const float ry = (y - anchor_y) * downsample_y;
+				const float ry2 = ry * ry;
+
+				// Row-level early-outs using distance bounds
+				float rx0 = (0 - anchor_x) * dx;
+				float rxN = (width - 1 - anchor_x) * dx;
+				float rx_min = std::min(rx0, rxN);
+				float rx_max = std::max(rx0, rxN);
+				float dist2_min;
+				if (anchor_x >= 0 && anchor_x < width)
+				{
+					dist2_min = ry2; // minimum at rx=0 inside the row
+				}
+				else
+				{
+					dist2_min = std::min(rx_min * rx_min + ry2, rx_max * rx_max + ry2);
+				}
+				float dist2_max = std::max(rx_min * rx_min + ry2, rx_max * rx_max + ry2);
+				if (dist2_min >= r_plus2)
+				{
+					if (!in_place)
+						std::memcpy(output_row, input_row, sizeof(PF_Pixel) * width);
+					continue;
+				}
+				if (dist2_max <= r_minus2)
+				{
+					for (int x = 0; x < width; ++x)
+					{
+						const PF_Pixel &inpx = input_row[x];
+						output_row[x].red = color.red;
+						output_row[x].green = color.green;
+						output_row[x].blue = color.blue;
+						output_row[x].alpha = inpx.alpha;
+					}
+					continue;
+				}
+
+				float rx = rx0;
+				float dist2 = rx * rx + ry2;
+				for (int x = 0; x < width; x++)
+				{
+					const PF_Pixel &input_px = input_row[x];
+					if (input_px.alpha == 0)
+					{
+						if (!in_place)
+							output_row[x] = input_px;
+						rx += dx;
+						dist2 += twodx * (rx - dx) + dx2;
+						continue;
+					}
+
+					const float dist = sqrtf(dist2);
+					const float signed_dist = (radius - dist) * (1.0f / edge_width);
+					const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
+					const float coverage = (clamped_dist + 1.0f) * 0.5f;
+
+					if (coverage <= 0.0001f)
+					{
+						if (!in_place)
+							output_row[x] = input_px;
+					}
+					else if (coverage >= 0.9999f)
+					{
+						output_row[x].red = color.red;
+						output_row[x].green = color.green;
+						output_row[x].blue = color.blue;
+						output_row[x].alpha = input_px.alpha;
+					}
+					else
+					{
+						const float coverage_alpha = coverage * input_px.alpha * INV_255;
+						output_row[x].red = FastBlend(input_px.red, color.red, coverage_alpha);
+						output_row[x].green = FastBlend(input_px.green, color.green, coverage_alpha);
+						output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage_alpha);
+						output_row[x].alpha = input_px.alpha;
+					}
+
+					rx += dx;
+					dist2 += twodx * (rx - dx) + dx2;
+				}
+			}
+		};
+
+		std::vector<std::thread> threads;
+		threads.reserve(num_threads);
+		for (int t = 0; t < num_threads; t++)
+		{
+			int start_y = t * rows_per_thread;
+			int end_y = std::min(start_y + rows_per_thread, height);
+			if (start_y < height)
+			{
+				threads.emplace_back(process_rows, start_y, end_y);
+			}
+		}
+
+		for (auto &thread : threads)
+		{
+			thread.join();
+		}
+	}
+
 	return err;
 }
