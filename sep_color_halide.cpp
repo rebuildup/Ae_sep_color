@@ -18,7 +18,8 @@ bool SepColorHalide_Render8(PF_InData *in_data,
 #if SEP_COLOR_ENABLE_HALIDE
     const int width = output->width;
     const int height = output->height;
-    if (width <= 0 || height <= 0) return true;
+    if (width <= 0 || height <= 0)
+        return true;
 
     const float dsx = static_cast<float>(in_data->downsample_x.den) / static_cast<float>(in_data->downsample_x.num);
     const float dsy = static_cast<float>(in_data->downsample_y.den) / static_cast<float>(in_data->downsample_y.num);
@@ -30,7 +31,7 @@ bool SepColorHalide_Render8(PF_InData *in_data,
     const float ang = angle_param_value * (pi_f / 180.0f);
     const float radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
     const int mode = params[ID_MODE]->u.pd.value;
-    const PF_Pixel col = params[ID_COLOR]->u.cd.value;
+    PF_Pixel col = params[ID_COLOR]->u.cd.value;
 
     const int in_stride_px = output->rowbytes / sizeof(PF_Pixel);
     const int out_stride_px = output->rowbytes / sizeof(PF_Pixel);
@@ -112,7 +113,12 @@ bool SepColorHalide_Render8(PF_InData *in_data,
 #endif
     return true;
 #else
-    (void)in_data; (void)out_data; (void)params; (void)output; (void)input_pixels; (void)output_pixels;
+    (void)in_data;
+    (void)out_data;
+    (void)params;
+    (void)output;
+    (void)input_pixels;
+    (void)output_pixels;
     return false;
 #endif
 }
@@ -126,10 +132,20 @@ bool SepColorHalide_Render16(PF_InData *in_data,
 {
 #if SEP_COLOR_ENABLE_HALIDE
     // TODO: 16-bit pipeline (u16 domain 0..32768) similar to 8-bit
-    (void)in_data; (void)out_data; (void)params; (void)output; (void)input_pixels; (void)output_pixels;
+    (void)in_data;
+    (void)out_data;
+    (void)params;
+    (void)output;
+    (void)input_pixels;
+    (void)output_pixels;
     return false;
 #else
-    (void)in_data; (void)out_data; (void)params; (void)output; (void)input_pixels; (void)output_pixels;
+    (void)in_data;
+    (void)out_data;
+    (void)params;
+    (void)output;
+    (void)input_pixels;
+    (void)output_pixels;
     return false;
 #endif
 }
@@ -143,10 +159,20 @@ bool SepColorHalide_Render32(PF_InData *in_data,
 {
 #if SEP_COLOR_ENABLE_HALIDE
     // TODO: float pipeline
-    (void)in_data; (void)out_data; (void)params; (void)output; (void)input_pixels; (void)output_pixels;
+    (void)in_data;
+    (void)out_data;
+    (void)params;
+    (void)output;
+    (void)input_pixels;
+    (void)output_pixels;
     return false;
 #else
-    (void)in_data; (void)out_data; (void)params; (void)output; (void)input_pixels; (void)output_pixels;
+    (void)in_data;
+    (void)out_data;
+    (void)params;
+    (void)output;
+    (void)input_pixels;
+    (void)output_pixels;
     return false;
 #endif
 }
