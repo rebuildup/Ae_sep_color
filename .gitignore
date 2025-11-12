@@ -24,9 +24,11 @@ output/
 .DS_Store
 Thumbs.db
 
-# Do not ignore third-party vendor binaries tracked via LFS
-!third_party/
-!third_party/halide/
-!third_party/halide/**/*
+# HalideバイナリファイルはGitHub Actionsでインストールされるため、リポジトリに含めない
+third_party/halide/win/lib/
+third_party/halide/win/bin/
+third_party/halide/mac/lib/
+# ヘッダーファイルは含める
+!third_party/halide/include/
 
 

@@ -52,92 +52,201 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: false
 
-      - name: Install Git LFS
-        shell: bash
+      - name: Install Halide (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
         run: |
-          git lfs install
-
-      - name: Fetch Git LFS files (skip on budget error)
-        shell: bash
-        continue-on-error: true
-        run: |
-          echo "Attempting to fetch Git LFS files..."
-          echo "Note: If LFS budget is exceeded, this step will fail but build will continue"
-          FETCH_OUTPUT=$(git lfs fetch --all 2>&1) || FETCH_EXIT=$?
-          if echo "$FETCH_OUTPUT" | grep -q "exceeded its LFS budget"; then
-            echo "::warning::LFS budget exceeded. Skipping LFS file fetch. Build will continue without LFS files."
-            echo "$FETCH_OUTPUT"
-            exit 0
-          fi
-          if [ -n "$FETCH_EXIT" ] && [ "$FETCH_EXIT" -ne 0 ]; then
-            echo "::warning::LFS fetch failed with exit code $FETCH_EXIT"
-            echo "$FETCH_OUTPUT"
-            exit 0
-          fi
-          git lfs checkout || echo "Warning: git lfs checkout failed"
-          echo "LFS fetch completed"
-
-      - name: Verify Git LFS files
-        shell: bash
-        run: |
-          echo "Verifying Git LFS files..."
-          git lfs ls-files || echo "Warning: git lfs ls-files failed"
-          echo "Checking for LFS files..."
+          Write-Host "Downloading Halide for Windows..."
           
-          # LFSファイルがポインタファイルかどうかをチェックする関数
-          check_lfs_file() {
-            local file_path=$1
-            local file_name=$2
-            
-            if [ ! -f "$file_path" ]; then
-              echo "::error::LFS file not found: $file_name"
-              return 1
-            fi
-            
-            # ポインタファイルかどうかをチェック（最初の行が "version https://git-lfs.github.com/spec/v1" かどうか）
-            if head -n 1 "$file_path" | grep -q "version https://git-lfs.github.com/spec/v1"; then
-              echo "::error::LFS file is still a pointer file (not fetched): $file_name"
-              echo "::error::LFS budget exceeded. Please increase LFS budget or clean up old LFS files."
-              return 1
-            fi
-            
-            FILE_SIZE=$(ls -lh "$file_path" | awk '{print $5}')
-            if [ -s "$file_path" ]; then
-              echo "✓ $file_name found ($FILE_SIZE)"
-              return 0
-            else
-              echo "::error::LFS file is empty: $file_name"
-              return 1
-            fi
+          # Halideのリリースページから最新のWindows版をダウンロード
+          $halideVersion = "v21.0.0"
+          # 複数のURL形式を試す
+          $halideUrls = @(
+            "https://github.com/halide/Halide/releases/download/$halideVersion/Halide-$halideVersion-x64-windows.zip",
+            "https://github.com/halide/Halide/releases/download/$halideVersion/Halide-$halideVersion-win64.zip"
+          )
+          
+          $halideZip = "$env:TEMP\Halide-windows.zip"
+          $downloadSuccess = $false
+          
+          foreach ($halideUrl in $halideUrls) {
+            try {
+              Write-Host "Trying: $halideUrl"
+              Invoke-WebRequest -Uri $halideUrl -OutFile $halideZip -UseBasicParsing -ErrorAction Stop
+              $downloadSuccess = $true
+              Write-Host "Download successful"
+              break
+            } catch {
+              Write-Host "Failed: $_"
+              continue
+            }
           }
           
-          # プラットフォームに応じて必要なLFSファイルをチェック
-          LFS_ERROR=0
-          if [ "${{ matrix.platform }}" == "win" ]; then
-            check_lfs_file "third_party/halide/win/lib/Halide.lib" "Halide.lib" || LFS_ERROR=1
-            check_lfs_file "third_party/halide/win/bin/Halide.dll" "Halide.dll" || LFS_ERROR=1
-          elif [ "${{ matrix.platform }}" == "mac" ]; then
-            check_lfs_file "third_party/halide/mac/lib/libHalide.21.0.0.dylib" "libHalide.21.0.0.dylib" || LFS_ERROR=1
+          if (-not $downloadSuccess) {
+            Write-Error "Failed to download Halide from any URL"
+            exit 1
+          }
+          
+          Write-Host "Extracting Halide..."
+          $halideExtractDir = "$env:TEMP\Halide-windows"
+          Expand-Archive -Path $halideZip -DestinationPath $halideExtractDir -Force
+          
+          # Halideのディレクトリ構造を確認して、適切な場所にコピー
+          $halideRoot = Get-ChildItem -Path $halideExtractDir -Directory | Select-Object -First 1
+          if (-not $halideRoot) {
+            # ディレクトリがない場合、直接ファイルが展開されている可能性がある
+            $halideRoot = $halideExtractDir
+          }
+          
+          $halideLibDir = Join-Path $halideRoot.FullName "lib"
+          $halideBinDir = Join-Path $halideRoot.FullName "bin"
+          $halideIncludeDir = Join-Path $halideRoot.FullName "include"
+          
+          # 必要なディレクトリを作成
+          $targetLibDir = "third_party\halide\win\lib"
+          $targetBinDir = "third_party\halide\win\bin"
+          $targetIncludeDir = "third_party\halide\include"
+          
+          New-Item -ItemType Directory -Path $targetLibDir -Force | Out-Null
+          New-Item -ItemType Directory -Path $targetBinDir -Force | Out-Null
+          
+          # ファイルをコピー
+          if (Test-Path $halideLibDir) {
+            Copy-Item -Path "$halideLibDir\Halide.lib" -Destination $targetLibDir -Force
+            Write-Host "✓ Halide.lib copied"
+          } else {
+            Write-Error "Halide lib directory not found: $halideLibDir"
+            exit 1
+          }
+          if (Test-Path $halideBinDir) {
+            Copy-Item -Path "$halideBinDir\Halide.dll" -Destination $targetBinDir -Force
+            Write-Host "✓ Halide.dll copied"
+          } else {
+            Write-Error "Halide bin directory not found: $halideBinDir"
+            exit 1
+          }
+          # ヘッダーファイルは既にリポジトリに含まれている可能性があるため、存在する場合のみコピー
+          if (Test-Path $halideIncludeDir) {
+            if (-not (Test-Path $targetIncludeDir)) {
+              New-Item -ItemType Directory -Path $targetIncludeDir -Force | Out-Null
+            }
+            Copy-Item -Path "$halideIncludeDir\*" -Destination $targetIncludeDir -Recurse -Force
+            Write-Host "✓ Halide headers copied"
+          } else {
+            Write-Host "⚠ Halide include directory not found, using existing headers from repository"
+          }
+          
+          Write-Host "Halide installation completed"
+
+      - name: Install Halide (macOS)
+        if: matrix.platform == 'mac'
+        shell: bash
+        run: |
+          set -e
+          echo "Downloading Halide for macOS..."
+          
+          # CPUアーキテクチャを検出
+          ARCH=$(uname -m)
+          if [ "$ARCH" == "arm64" ]; then
+            HALIDE_ARCH="arm64"
+          else
+            HALIDE_ARCH="x86_64"
           fi
           
-          if [ $LFS_ERROR -ne 0 ]; then
-            echo "::error::Required LFS files are not available. Build cannot continue."
-            echo "::error::"
-            echo "::error::LFS budget exceeded. To fix this issue:"
-            echo "::error::1. Go to GitHub repository Settings → Billing → Git LFS Data"
-            echo "::error::2. Delete old LFS objects from other repositories, OR"
-            echo "::error::3. Increase LFS storage budget"
-            echo "::error::"
-            echo "::error::Current required LFS files (~441MB total):"
-            echo "::error::  - Halide.lib (~96MB)"
-            echo "::error::  - Halide.dll (~139MB)"
-            echo "::error::  - libHalide.21.0.0.dylib (~206MB)"
+          # Halideのリリースページから最新のmacOS版をダウンロード
+          HALIDE_VERSION="v21.0.0"
+          # 複数のURL形式を試す
+          HALIDE_URLS=(
+            "https://github.com/halide/Halide/releases/download/${HALIDE_VERSION}/Halide-${HALIDE_VERSION}-${HALIDE_ARCH}-osx.tar.gz"
+            "https://github.com/halide/Halide/releases/download/${HALIDE_VERSION}/Halide-${HALIDE_VERSION}-osx-${HALIDE_ARCH}.tar.gz"
+          )
+          
+          HALIDE_TAR="$RUNNER_TEMP/Halide-macos.tar.gz"
+          DOWNLOAD_SUCCESS=false
+          
+          for HALIDE_URL in "${HALIDE_URLS[@]}"; do
+            echo "Trying: $HALIDE_URL"
+            if curl -L -f -o "$HALIDE_TAR" "$HALIDE_URL" 2>/dev/null; then
+              echo "Download successful"
+              DOWNLOAD_SUCCESS=true
+              break
+            else
+              echo "Failed to download from $HALIDE_URL"
+            fi
+          done
+          
+          if [ "$DOWNLOAD_SUCCESS" != "true" ]; then
+            echo "::error::Failed to download Halide from any URL"
             exit 1
           fi
           
-          echo "All required LFS files are available."
+          echo "Extracting Halide..."
+          HALIDE_EXTRACT_DIR="$RUNNER_TEMP/Halide-macos"
+          mkdir -p "$HALIDE_EXTRACT_DIR"
+          tar -xzf "$HALIDE_TAR" -C "$HALIDE_EXTRACT_DIR" --strip-components=1
+          
+          # Halideのディレクトリ構造を確認して、適切な場所にコピー
+          HALIDE_LIB_DIR="$HALIDE_EXTRACT_DIR/lib"
+          HALIDE_INCLUDE_DIR="$HALIDE_EXTRACT_DIR/include"
+          
+          # 必要なディレクトリを作成
+          TARGET_LIB_DIR="third_party/halide/mac/lib"
+          TARGET_INCLUDE_DIR="third_party/halide/include"
+          
+          mkdir -p "$TARGET_LIB_DIR"
+          
+          # ファイルをコピー
+          if [ -d "$HALIDE_LIB_DIR" ]; then
+            cp "$HALIDE_LIB_DIR"/libHalide*.dylib "$TARGET_LIB_DIR/" || true
+            echo "✓ Halide libraries copied"
+          else
+            echo "::error::Halide lib directory not found: $HALIDE_LIB_DIR"
+            exit 1
+          fi
+          # ヘッダーファイルは既にリポジトリに含まれている可能性があるため、存在する場合のみコピー
+          if [ -d "$HALIDE_INCLUDE_DIR" ]; then
+            mkdir -p "$TARGET_INCLUDE_DIR"
+            cp -r "$HALIDE_INCLUDE_DIR"/* "$TARGET_INCLUDE_DIR/" || true
+            echo "✓ Halide headers copied"
+          else
+            echo "⚠ Halide include directory not found, using existing headers from repository"
+          fi
+          
+          echo "Halide installation completed"
+
+      - name: Verify Halide installation
+        shell: bash
+        run: |
+          echo "Verifying Halide installation..."
+          if [ "${{ matrix.platform }}" == "win" ]; then
+            if [ -f "third_party/halide/win/lib/Halide.lib" ]; then
+              echo "✓ Halide.lib found"
+            else
+              echo "::error::Halide.lib not found"
+              exit 1
+            fi
+            if [ -f "third_party/halide/win/bin/Halide.dll" ]; then
+              echo "✓ Halide.dll found"
+            else
+              echo "::error::Halide.dll not found"
+              exit 1
+            fi
+          elif [ "${{ matrix.platform }}" == "mac" ]; then
+            if ls third_party/halide/mac/lib/libHalide*.dylib 1> /dev/null 2>&1; then
+              echo "✓ Halide dylib found"
+            else
+              echo "::error::Halide dylib not found"
+              exit 1
+            fi
+          fi
+          if [ -d "third_party/halide/include" ]; then
+            echo "✓ Halide headers found"
+          else
+            echo "::error::Halide headers not found"
+            exit 1
+          fi
+          echo "All required Halide files are available."
 
       - name: Set up Xcode (Mac)
         if: matrix.platform == 'mac'
