@@ -115,24 +115,24 @@ jobs:
           
           # 複数のパスを試す
           $possibleLibPaths = @(
-            Join-Path $halideRoot.FullName "lib",
-            Join-Path $halideRoot.FullName "lib\x64",
-            Join-Path $halideRoot.FullName "lib\Release",
-            Join-Path $halideExtractDir "lib",
-            Join-Path $halideExtractDir "lib\x64"
+            (Join-Path $halideRoot.FullName "lib"),
+            (Join-Path $halideRoot.FullName "lib\x64"),
+            (Join-Path $halideRoot.FullName "lib\Release"),
+            (Join-Path $halideExtractDir "lib"),
+            (Join-Path $halideExtractDir "lib\x64")
           )
           
           $possibleBinPaths = @(
-            Join-Path $halideRoot.FullName "bin",
-            Join-Path $halideRoot.FullName "bin\x64",
-            Join-Path $halideRoot.FullName "bin\Release",
-            Join-Path $halideExtractDir "bin",
-            Join-Path $halideExtractDir "bin\x64"
+            (Join-Path $halideRoot.FullName "bin"),
+            (Join-Path $halideRoot.FullName "bin\x64"),
+            (Join-Path $halideRoot.FullName "bin\Release"),
+            (Join-Path $halideExtractDir "bin"),
+            (Join-Path $halideExtractDir "bin\x64")
           )
           
           $possibleIncludePaths = @(
-            Join-Path $halideRoot.FullName "include",
-            Join-Path $halideExtractDir "include"
+            (Join-Path $halideRoot.FullName "include"),
+            (Join-Path $halideExtractDir "include")
           )
           
           # libディレクトリを探す
