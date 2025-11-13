@@ -1132,11 +1132,43 @@ jobs:
             New-Item -ItemType Directory -Path $artifactsDir -Force | Out-Null
             Copy-Item -Path $aexPath.FullName -Destination $artifactsDir -Force
             Write-Host "Artifact copied: $artifactsDir\sep_color.aex"
+            $halideDllSource = "..\third_party\halide\win\bin\Halide.dll"
+            if (Test-Path $halideDllSource) {
+              Copy-Item -Path $halideDllSource -Destination $artifactsDir -Force
+              Write-Host "Artifact copied: $artifactsDir\Halide.dll"
+            } else {
+              Write-Host "::warning::Halide.dll not found at $halideDllSource"
+            }
           } else {
             Write-Host "Error: Build artifact not found"
             Get-ChildItem -Recurse -Depth 3 | Where-Object { $_.Extension -eq ".aex" -or $_.Name -like "*.obj" } | Select-Object FullName | Format-Table -AutoSize
             exit 1
           }
+      - name: Verify exported entry points (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $dumpbinCmd = Get-Command dumpbin -ErrorAction SilentlyContinue
+          if (-not $dumpbinCmd) {
+            Write-Host "::error::dumpbin not available in PATH"
+            exit 1
+          }
+          $dumpbinPath = $dumpbinCmd.Source
+          $artifactPath = Join-Path "${{ github.workspace }}" "artifacts\sep_color.aex"
+          if (-not (Test-Path $artifactPath)) {
+            Write-Host "::error::Artifact not found at $artifactPath"
+            exit 1
+          }
+          Write-Host "Running dumpbin on $artifactPath"
+          $dumpbinOutput = & $dumpbinPath /EXPORTS $artifactPath 2>&1
+          $dumpbinOutput | ForEach-Object { Write-Host $_ }
+          $hasEffectMain = $dumpbinOutput -match '\bEffectMain\b'
+          $hasPluginData = $dumpbinOutput -match '\bPluginDataEntryFunction2\b'
+          if (-not $hasEffectMain -or -not $hasPluginData) {
+            Write-Host "::error::Required exports not found in sep_color.aex"
+            exit 1
+          }
+          Write-Host "✓ Verified exports: EffectMain, PluginDataEntryFunction2"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
