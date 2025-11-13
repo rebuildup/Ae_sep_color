@@ -861,14 +861,6 @@ static PF_Err Render8(
 		{
 			thread.join();
 		}
-	}
-
-#if SEP_COLOR_ENABLE_HALIDE
-	if (locked_handle && in_data->global_data)
-	{
-		suites.HandleSuite1()->host_unlock_handle(in_data->global_data);
-	}
-#endif
 
 	return err;
 }
@@ -1428,6 +1420,13 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 #endif
 		}
 	}
+
+#if SEP_COLOR_ENABLE_HALIDE
+	if (locked_handle && in_data->global_data)
+	{
+		suites.HandleSuite1()->host_unlock_handle(in_data->global_data);
+	}
+#endif
 
 	return err;
 }
