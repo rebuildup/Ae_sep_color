@@ -66,7 +66,9 @@ void SepColorHalide_GlobalRelease(SepColorHalideGlobalState &state)
 #if SEP_COLOR_ENABLE_HALIDE
 	if (state.runtime_loaded)
 	{
+#if defined(HALIDE_JIT)
 		Halide::JITSharedRuntime::release_all();
+#endif
 	}
 	state = {};
 #else
