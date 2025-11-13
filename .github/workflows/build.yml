@@ -393,45 +393,6 @@ jobs:
           
           echo "Halide installation completed"
 
-      - name: Verify Halide installation (Windows)
-        if: matrix.platform == 'win'
-        shell: pwsh
-        run: |
-          Write-Host "Verifying Halide installation (Windows)..."
-          $libPath = "third_party\halide\win\lib\Halide.lib"
-          $dllPath = "third_party\halide\win\bin\Halide.dll"
-          $includePath = "third_party\halide\include"
-
-          if (-not (Test-Path $libPath)) {
-            Write-Host "::error::Halide.lib not found"
-            exit 1
-          }
-          if (-not (Test-Path $dllPath)) {
-            Write-Host "::error::Halide.dll not found"
-            exit 1
-          }
-          $dumpbinCmd = Get-Command dumpbin -ErrorAction SilentlyContinue
-          if (-not $dumpbinCmd) {
-            Write-Host "::error::dumpbin not available to verify Halide.lib architecture"
-            exit 1
-          }
-          $headers = & $dumpbinCmd.Source /headers $libPath 2>&1
-          $machineMatch = $headers | Select-String -Pattern "machine\s+\(([^)]+)\)"
-          if (-not $machineMatch) {
-            Write-Host "::error::Unable to determine machine type for Halide.lib"
-            exit 1
-          }
-          $machine = $machineMatch.Matches[0].Groups[1].Value
-          if ($machine -notmatch "x64|8664|AMD64") {
-            Write-Host "::error::Halide.lib is not 64-bit (detected: $machine)"
-            exit 1
-          }
-          if (-not (Test-Path $includePath)) {
-            Write-Host "::error::Halide headers not found"
-            exit 1
-          }
-          Write-Host "✓ Halide runtime files present and 64-bit."
-
       - name: Verify Halide installation (macOS)
         if: matrix.platform == 'mac'
         shell: bash
@@ -475,6 +436,45 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+
+      - name: Verify Halide installation (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          Write-Host "Verifying Halide installation (Windows)..."
+          $libPath = "third_party\halide\win\lib\Halide.lib"
+          $dllPath = "third_party\halide\win\bin\Halide.dll"
+          $includePath = "third_party\halide\include"
+
+          if (-not (Test-Path $libPath)) {
+            Write-Host "::error::Halide.lib not found"
+            exit 1
+          }
+          if (-not (Test-Path $dllPath)) {
+            Write-Host "::error::Halide.dll not found"
+            exit 1
+          }
+          $dumpbinCmd = Get-Command dumpbin -ErrorAction SilentlyContinue
+          if (-not $dumpbinCmd) {
+            Write-Host "::error::dumpbin not available to verify Halide.lib architecture"
+            exit 1
+          }
+          $headers = & $dumpbinCmd.Source /headers $libPath 2>&1
+          $machineMatch = $headers | Select-String -Pattern "machine\s+\(([^)]+)\)"
+          if (-not $machineMatch) {
+            Write-Host "::error::Unable to determine machine type for Halide.lib"
+            exit 1
+          }
+          $machine = $machineMatch.Matches[0].Groups[1].Value
+          if ($machine -notmatch "x64|8664|AMD64") {
+            Write-Host "::error::Halide.lib is not 64-bit (detected: $machine)"
+            exit 1
+          }
+          if (-not (Test-Path $includePath)) {
+            Write-Host "::error::Halide headers not found"
+            exit 1
+          }
+          Write-Host "✓ Halide runtime files present and 64-bit."
 
       - name: Verify Halide headers (Windows)
         if: matrix.platform == 'win'
