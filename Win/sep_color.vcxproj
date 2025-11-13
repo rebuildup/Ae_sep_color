@@ -111,67 +111,7 @@
     </Midl>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>..\..\..\Headers;..\..\..\Headers\SP;..\..\..\Headers\Win;..\..\..\Resources;..\..\..\Util;$(MSBuildProjectDirectory)\..\third_party\halide\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>MSWindows;WIN32;_DEBUG;_WINDOWS;SEP_COLOR_ENABLE_HALIDE=1;SEP_COLOR_HALIDE_GPU=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <StructMemberAlignment>16Bytes</StructMemberAlignment>
-      <RuntimeTypeInfo>true</RuntimeTypeInfo>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
-      <PrecompiledHeaderFile>AE_Effect.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
-      <AssemblerOutput>NoListing</AssemblerOutput>
-      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
-      <ObjectFileName>$(IntDir)</ObjectFileName>
-      <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
-      <BrowseInformation>true</BrowseInformation>
-      <WarningLevel>Level3</WarningLevel>
-      <TreatWarningAsError>true</TreatWarningAsError>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <CompileAs>Default</CompileAs>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <LanguageStandard_C>stdc17</LanguageStandard_C>
-    </ClCompile>
-    <ResourceCompile>
-      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <Culture>0x0409</Culture>
-    </ResourceCompile>
-    <Link>
-      <ShowProgress>NotSet</ShowProgress>
-      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <ProgramDatabaseFile>$(IntDir)$(TargetName).pdb</ProgramDatabaseFile>
-      <SubSystem>
-      </SubSystem>
-      <RandomizedBaseAddress>false</RandomizedBaseAddress>
-      <DataExecutionPrevention>
-      </DataExecutionPrevention>
-      <AdditionalDependencies>Halide.lib;d3d12.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(MSBuildProjectDirectory)\..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
-      <TargetMachine>MachineX64</TargetMachine>
-    </Link>
-    <Bscmake>
-      <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
-    </Bscmake>
-    <PostBuildEvent>
-      <Command>if exist "$(MSBuildProjectDirectory)\..\third_party\halide\win\bin\Halide.dll" copy /Y "$(MSBuildProjectDirectory)\..\third_party\halide\win\bin\Halide.dll" "$(OutDir)\Halide.dll"</Command>
-    </PostBuildEvent>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
-    <Midl>
-      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <MkTypLibCompatible>true</MkTypLibCompatible>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TypeLibraryName>.\Debug/sep_color.tlb</TypeLibraryName>
-      <HeaderFileName>
-      </HeaderFileName>
-    </Midl>
-    <ClCompile>
-      <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>..\..\..\Headers;..\..\..\Headers\SP;..\..\..\Headers\Win;..\..\..\Resources;..\..\..\Util;$(MSBuildProjectDirectory)\..\third_party\halide\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\Headers;..\..\..\Headers\SP;..\..\..\Headers\Win;..\..\..\Resources;..\..\..\Util;$(ProjectDir)..\third_party\halide\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>MSWindows;WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <StructMemberAlignment>Default</StructMemberAlignment>
@@ -190,8 +130,64 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <CompileAs>Default</CompileAs>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <LanguageStandard_C>stdc17</LanguageStandard_C>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Culture>0x0409</Culture>
+    </ResourceCompile>
+    <Link>
+      <ShowProgress>NotSet</ShowProgress>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>$(IntDir)$(TargetName).pdb</ProgramDatabaseFile>
+      <SubSystem>
+      </SubSystem>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <DataExecutionPrevention>
+      </DataExecutionPrevention>
+      <AdditionalDependencies>Halide.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
+      <TargetMachine>MachineX64</TargetMachine>
+    </Link>
+    <Bscmake>
+      <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
+    </Bscmake>
+    <PostBuildEvent>
+      <Command>if exist "$(ProjectDir)..\third_party\halide\win\bin\Halide.dll" copy /Y "$(ProjectDir)..\third_party\halide\win\bin\Halide.dll" "$(OutDir)\Halide.dll"</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
+    <Midl>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MkTypLibCompatible>true</MkTypLibCompatible>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TypeLibraryName>.\Debug/sep_color.tlb</TypeLibraryName>
+      <HeaderFileName>
+      </HeaderFileName>
+    </Midl>
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>..\..\..\Headers;..\..\..\Headers\SP;..\..\..\Headers\Win;..\..\..\Resources;..\..\..\Util;$(ProjectDir)..\third_party\halide\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>MSWindows;WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <PrecompiledHeaderFile>AE_Effect.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
+      <BrowseInformation>true</BrowseInformation>
+      <WarningLevel>Level3</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -208,15 +204,15 @@
       <RandomizedBaseAddress>true</RandomizedBaseAddress>
       <DataExecutionPrevention>
       </DataExecutionPrevention>
-      <AdditionalDependencies>Halide.lib;d3d12.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(MSBuildProjectDirectory)\..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Halide.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
     </Link>
     <Bscmake>
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
     </Bscmake>
     <PostBuildEvent>
-      <Command>if exist "$(MSBuildProjectDirectory)\..\third_party\halide\win\bin\Halide.dll" copy /Y "$(MSBuildProjectDirectory)\..\third_party\halide\win\bin\Halide.dll" "$(OutDir)\Halide.dll"</Command>
+      <Command>if exist "$(ProjectDir)..\third_party\halide\win\bin\Halide.dll" copy /Y "$(ProjectDir)..\third_party\halide\win\bin\Halide.dll" "$(OutDir)\Halide.dll"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -231,9 +227,9 @@
     </Midl>
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>..\..\..\Headers;..\..\..\Headers\SP;..\..\..\Headers\Win;..\..\..\Resources;..\..\..\Util;$(MSBuildProjectDirectory)\..\third_party\halide\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\Headers;..\..\..\Headers\SP;..\..\..\Headers\Win;..\..\..\Resources;..\..\..\Util;$(ProjectDir)..\third_party\halide\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <StructMemberAlignment>16Bytes</StructMemberAlignment>
+      <StructMemberAlignment>Default</StructMemberAlignment>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <PrecompiledHeader>
       </PrecompiledHeader>
@@ -249,7 +245,7 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <CompileAs>Default</CompileAs>
-      <PreprocessorDefinitions>MSWindows;WIN32;_WINDOWS;SEP_COLOR_ENABLE_HALIDE=1;SEP_COLOR_HALIDE_GPU=1</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MSWindows;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
@@ -269,8 +265,8 @@
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention>
       </DataExecutionPrevention>
-      <AdditionalDependencies>Halide.lib;d3d12.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(MSBuildProjectDirectory)\..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Halide.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
       <TargetMachine>MachineX64</TargetMachine>
     </Link>
@@ -278,7 +274,7 @@
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
     </Bscmake>
     <PostBuildEvent>
-      <Command>if exist "$(MSBuildProjectDirectory)\..\third_party\halide\win\bin\Halide.dll" copy /Y "$(MSBuildProjectDirectory)\..\third_party\halide\win\bin\Halide.dll" "$(OutDir)\Halide.dll"</Command>
+      <Command>if exist "$(ProjectDir)..\third_party\halide\win\bin\Halide.dll" copy /Y "$(ProjectDir)..\third_party\halide\win\bin\Halide.dll" "$(OutDir)\Halide.dll"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
@@ -292,7 +288,7 @@
     </Midl>
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>..\..\..\Headers;..\..\..\Headers\SP;..\..\..\Headers\Win;..\..\..\Resources;..\..\..\Util;$(MSBuildProjectDirectory)\..\third_party\halide\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\Headers;..\..\..\Headers\SP;..\..\..\Headers\Win;..\..\..\Resources;..\..\..\Util;$(ProjectDir)..\third_party\halide\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <StructMemberAlignment>Default</StructMemberAlignment>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
@@ -330,15 +326,15 @@
       <RandomizedBaseAddress>true</RandomizedBaseAddress>
       <DataExecutionPrevention>
       </DataExecutionPrevention>
-      <AdditionalDependencies>Halide.lib;d3d12.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(MSBuildProjectDirectory)\..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Halide.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\third_party\halide\win\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
     </Link>
     <Bscmake>
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
     </Bscmake>
     <PostBuildEvent>
-      <Command>if exist "$(MSBuildProjectDirectory)\..\third_party\halide\win\bin\Halide.dll" copy /Y "$(MSBuildProjectDirectory)\..\third_party\halide\win\bin\Halide.dll" "$(OutDir)\Halide.dll"</Command>
+      <Command>if exist "$(ProjectDir)..\third_party\halide\win\bin\Halide.dll" copy /Y "$(ProjectDir)..\third_party\halide\win\bin\Halide.dll" "$(OutDir)\Halide.dll"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
