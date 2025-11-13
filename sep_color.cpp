@@ -538,32 +538,6 @@ GlobalSetup(
 	// PiPLファイル（sep_colorPiPL.r）と一致させる必要がある
 	out_data->out_flags2 = 0x00000001;
 
-	// 32-bit floatピクセルフォーマットのサポートを宣言
-	// 公式ドキュメント: https://ae-plugins.docsforadobe.dev
-	// PF Pixel Format Suiteを使用して32-bit float対応を宣言
-	PF_PixelFormatSuite1 *pixelFormatSuite = NULL;
-	err = in_data->pica_basicP->AcquireSuite(
-		in_data->effect_ref,
-		kPFPixelFormatSuite,
-		kPFPixelFormatSuiteVersion1,
-		NULL,
-		(void **)&pixelFormatSuite);
-	
-	if (err == PF_Err_NONE && pixelFormatSuite)
-	{
-		// PF_PixelFormat_ARGB128 (32-bit float) のサポートを追加
-		err = pixelFormatSuite->AddSupportedPixelFormat(
-			in_data,
-			out_data,
-			PF_PixelFormat_ARGB128);
-		
-		// スイートを解放
-		in_data->pica_basicP->ReleaseSuite(
-			in_data->effect_ref,
-			kPFPixelFormatSuite,
-			kPFPixelFormatSuiteVersion1);
-	}
-
 	return PF_Err_NONE;
 }
 
