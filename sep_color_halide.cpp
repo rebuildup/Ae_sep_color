@@ -1,5 +1,6 @@
 #include "sep_color_halide.h"
 #include "sep_color.h"
+#include "halide_loader.h"
 
 #include <cmath>
 
@@ -17,6 +18,11 @@ bool SepColorHalide_Render8(PF_InData *in_data,
                             PF_Pixel *output_pixels)
 {
 #if SEP_COLOR_ENABLE_HALIDE
+	if (!EnsureHalideRuntimeLoaded())
+	{
+		return false;
+	}
+
     const int width = output->width;
     const int height = output->height;
     if (width <= 0 || height <= 0)

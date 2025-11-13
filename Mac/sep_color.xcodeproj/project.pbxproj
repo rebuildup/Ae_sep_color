@@ -14,6 +14,7 @@
 		D0FE579D0993C5E500139A60 /* AEGP_SuiteHandler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0FE579A0993C5E500139A60 /* AEGP_SuiteHandler.cpp */; };
 		D0FE579E0993C5E500139A60 /* MissingSuiteError.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0FE579C0993C5E500139A60 /* MissingSuiteError.cpp */; };
 		D7BF1A6F2CFF43F498C7A5BA /* sep_color_halide.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D7BF1A6D2CFF43F498C7A5B8 /* sep_color_halide.cpp */; };
+		D7BF1A702CFF43F598C7A5BB /* halide_loader.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D7BF1A6E2CFF43F498C7A5B9 /* halide_loader.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +32,7 @@
 		D0FE579C0993C5E500139A60 /* MissingSuiteError.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = MissingSuiteError.cpp; path = ../../../Util/MissingSuiteError.cpp; sourceTree = SOURCE_ROOT; };
 		D7BF1A6D2CFF43F498C7A5B8 /* sep_color_halide.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = sep_color_halide.cpp; path = ../sep_color_halide.cpp; sourceTree = SOURCE_ROOT; };
 		D7BF1A6C2CFF43F498C7A5B7 /* sep_color_halide.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = sep_color_halide.h; path = ../sep_color_halide.h; sourceTree = SOURCE_ROOT; };
+		D7BF1A6E2CFF43F498C7A5B9 /* halide_loader.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = halide_loader.cpp; path = ../halide_loader.cpp; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -54,6 +56,7 @@
 				D0FE575B0993C4E900139A60 /* sep_color_Strings.h */,
 				D7BF1A6D2CFF43F498C7A5B8 /* sep_color_halide.cpp */,
 				D7BF1A6C2CFF43F498C7A5B7 /* sep_color_halide.h */,
+				D7BF1A6E2CFF43F498C7A5B9 /* halide_loader.cpp */,
 				D0FE575E0993C4E900139A60 /* sep_colorPiPL.r */,
 				D0FE57630993C4FD00139A60 /* Supporting Code */,
 				7EF36FB616F29701002A3CB3 /* Cocoa.framework */,
@@ -165,6 +168,7 @@
 				D0FE575F0993C4E900139A60 /* sep_color_Strings.cpp in Sources */,
 				D0FE57600993C4E900139A60 /* sep_color.cpp in Sources */,
 				D7BF1A6F2CFF43F498C7A5BA /* sep_color_halide.cpp in Sources */,
+				D7BF1A702CFF43F598C7A5BB /* halide_loader.cpp in Sources */,
 				D0FE579D0993C5E500139A60 /* AEGP_SuiteHandler.cpp in Sources */,
 				D0FE579E0993C5E500139A60 /* MissingSuiteError.cpp in Sources */,
 			);
