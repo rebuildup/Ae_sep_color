@@ -373,9 +373,6 @@ cl /D "MSWindows" /EP $(IntDir)%(Filename).rrc &gt;               "$(ProjectDir)
     <ResourceCompile Include="sep_colorPiPL.rc" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="sep_color.def" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="..\..\..\Headers\AE_PluginData.h" />
     <ClInclude Include="..\sep_color.h" />
     <ClInclude Include="..\sep_color_Strings.h" />
