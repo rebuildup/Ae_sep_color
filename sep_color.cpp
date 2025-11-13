@@ -862,6 +862,8 @@ static PF_Err Render8(
 			thread.join();
 		}
 
+	}
+
 	return err;
 }
 
