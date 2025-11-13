@@ -1866,41 +1866,46 @@ static PF_Err Render32Fast(
 	return err;
 }
 
-extern "C" DllExport
-	PF_Err
-	EffectMain(
-		PF_Cmd cmd,
-		PF_InData *in_data,
-		PF_OutData *out_data,
-		PF_ParamDef *params[],
-		PF_LayerDef *output,
-		void *extra)
+extern "C"
 {
-	PF_Err err = PF_Err_NONE;
-	try
+
+	DllExport
+		PF_Err
+		EffectMain(
+			PF_Cmd cmd,
+			PF_InData *in_data,
+			PF_OutData *out_data,
+			PF_ParamDef *params[],
+			PF_LayerDef *output,
+			void *extra)
 	{
-		switch (cmd)
+		PF_Err err = PF_Err_NONE;
+		try
 		{
-		case PF_Cmd_ABOUT:
-			err = About(in_data, out_data, params, output);
-			break;
-		case PF_Cmd_GLOBAL_SETUP:
-			err = GlobalSetup(in_data, out_data, params, output);
-			break;
-		case PF_Cmd_PARAMS_SETUP:
-			err = ParamsSetup(in_data, out_data, params, output);
-			break;
-		case PF_Cmd_RENDER:
-			err = Render(in_data, out_data, params, output);
-			break;
+			switch (cmd)
+			{
+			case PF_Cmd_ABOUT:
+				err = About(in_data, out_data, params, output);
+				break;
+			case PF_Cmd_GLOBAL_SETUP:
+				err = GlobalSetup(in_data, out_data, params, output);
+				break;
+			case PF_Cmd_PARAMS_SETUP:
+				err = ParamsSetup(in_data, out_data, params, output);
+				break;
+			case PF_Cmd_RENDER:
+				err = Render(in_data, out_data, params, output);
+				break;
+			}
 		}
+		catch (PF_Err &thrown_err)
+		{
+			err = thrown_err;
+		}
+		return err;
 	}
-	catch (PF_Err &thrown_err)
-	{
-		err = thrown_err;
-	}
-	return err;
-}
+
+} // extern "C"
 
 // -------------------------------------------------------------
 // Optimized 8-bit renderer implementation
