@@ -76,97 +76,27 @@ jobs:
           
           Write-Host "Available assets:"
           $releaseInfo.assets | ForEach-Object { Write-Host "  - $($_.name)" }
-          
-          # Windows用のアセットを検索（大文字小文字を区別しない）
-          # 優先順位: x64/win64を含む > windows/winを含む（x86を明示的に含むものは除外）
-          $windowsAsset = $null
-          
+
           Write-Host ""
-          Write-Host "Searching for Windows asset (case-insensitive)..."
-          
-          # すべてのアセット名を小文字に変換して比較（大文字小文字を区別しない検索）
-          $allAssets = $releaseInfo.assets | ForEach-Object {
-            [PSCustomObject]@{
-              Original = $_
-              NameLower = $_.name.ToLower()
-            }
-          }
-          
-          # 64bit 版を確実に選択する（アセット名のパターンマッチング）
-          # 優先順位: x64/win64/64bit を含む > 32bit/win32 を含まない
-          $windowsAsset = $null
-          
-          # パターン1: 明示的に 64bit を示すアセット
-          # Halide の命名規則: Halide-{version}-x86-64-windows-{hash}.zip
-          # x86-64 を最優先で検索（Halide の標準命名規則）
-          $candidates = $allAssets | Where-Object {
-            $_.NameLower -match '\.zip$' -and 
-            $_.NameLower -match 'windows' -and
-            ($_.NameLower -match 'x86-64' -or $_.NameLower -match 'x86_64' -or $_.NameLower -match 'x64' -or $_.NameLower -match 'win64' -or $_.NameLower -match '64-bit' -or $_.NameLower -match '64bit') -and
-            $_.NameLower -notmatch 'x86-32' -and
-            $_.NameLower -notmatch 'x86_32' -and
-            $_.NameLower -notmatch 'win32' -and
-            $_.NameLower -notmatch '32-bit' -and
-            $_.NameLower -notmatch '32bit'
-          }
-          
-          if ($candidates) {
-            # x86-64 を含むアセットを優先的に選択
-            $x86_64Asset = $candidates | Where-Object { $_.NameLower -match 'x86-64' } | Select-Object -First 1
-            if ($x86_64Asset) {
-              $windowsAsset = $x86_64Asset.Original
-              Write-Host "Found 64bit asset (x86-64): $($windowsAsset.name)"
-            } else {
-              $windowsAsset = $candidates[0].Original
-              Write-Host "Found 64bit asset (explicit): $($windowsAsset.name)"
-            }
-          } else {
-            # パターン2: 32bit を明示的に含まないアセット（デフォルトが 64bit の可能性）
-            $candidates = $allAssets | Where-Object {
-              $_.NameLower -match '\.zip$' -and 
-              $_.NameLower -match 'windows' -and
-              $_.NameLower -notmatch 'x86-32' -and
-              $_.NameLower -notmatch 'x86_32' -and
-              $_.NameLower -notmatch 'win32' -and
-              $_.NameLower -notmatch '32-bit' -and
-              $_.NameLower -notmatch '32bit' -and
-              $_.NameLower -notmatch '\b32\b'
-            }
-            
-            if ($candidates) {
-              $windowsAsset = $candidates[0].Original
-              Write-Host "Found Windows asset (no 32bit marker): $($windowsAsset.name)"
-              Write-Host "::warning::Asset name does not explicitly indicate 64bit. Will verify after download."
-            }
-          }
-          
-          # それでも見つからない場合、エラーにする
+          Write-Host "Selecting 64-bit Windows asset..."
+
+          $windowsAsset = $releaseInfo.assets | Where-Object {
+            $_.name -match '\.zip$' -and
+            $_.name -match '(?i)windows' -and
+            $_.name -match '(?i)(x86-64|x86_64|x64|win64|64-bit|64bit)'
+          } | Select-Object -First 1
+
           if (-not $windowsAsset) {
-            Write-Host "::error::No suitable Windows 64bit asset found"
-            Write-Host ""
-            Write-Host "Available Windows-related assets:"
-            $windowsRelated = $releaseInfo.assets | Where-Object {
-              $nameLower = $_.name.ToLower()
-              $nameLower -match '\.zip$' -and 
-              $nameLower -match 'windows'
-            }
-            if ($windowsRelated) {
-              $windowsRelated | ForEach-Object { Write-Host "  - $($_.name)" }
-            } else {
-              Write-Host "  (none found)"
-            }
-            Write-Host ""
-            Write-Host "All available assets in this release:"
-            $releaseInfo.assets | ForEach-Object { Write-Host "  - $($_.name)" }
-            Write-Host ""
-            Write-Host "::error::Halide v21.0.0 may not include pre-built Windows 64bit binaries."
-            Write-Host "You may need to:"
-            Write-Host "  1. Build Halide from source"
-            Write-Host "  2. Use a different Halide version that includes Windows 64bit binaries"
-            Write-Host "  3. Disable Halide support in the plugin"
+            Write-Host "::error::No 64-bit Windows Halide asset found (expected markers: x86-64/x64/win64/64-bit)"
+            $releaseInfo.assets | Where-Object { $_.name -match '(?i)windows' } | ForEach-Object { Write-Host "  - $($_.name)" }
             exit 1
           }
-          
+
+          if ($windowsAsset.name -match '(?i)x86-32|x86_32|win32|32-bit|32bit|\b32\b') {
+            Write-Host "::error::Selected asset appears to be 32-bit: $($windowsAsset.name)"
+            exit 1
+          }
+
           Write-Host ""
           Write-Host "Selected asset: $($windowsAsset.name)"
           Write-Host "Download URL: $($windowsAsset.browser_download_url)"
@@ -463,42 +393,60 @@ jobs:
           
           echo "Halide installation completed"
 
-      - name: Verify Halide installation
+      - name: Verify Halide installation (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          Write-Host "Verifying Halide installation (Windows)..."
+          $libPath = "third_party\halide\win\lib\Halide.lib"
+          $dllPath = "third_party\halide\win\bin\Halide.dll"
+          $includePath = "third_party\halide\include"
+
+          if (-not (Test-Path $libPath)) {
+            Write-Host "::error::Halide.lib not found"
+            exit 1
+          }
+          if (-not (Test-Path $dllPath)) {
+            Write-Host "::error::Halide.dll not found"
+            exit 1
+          }
+          $dumpbinCmd = Get-Command dumpbin -ErrorAction SilentlyContinue
+          if (-not $dumpbinCmd) {
+            Write-Host "::error::dumpbin not available to verify Halide.lib architecture"
+            exit 1
+          }
+          $headers = & $dumpbinCmd.Source /headers $libPath 2>&1
+          $machineMatch = $headers | Select-String -Pattern "machine\s+\(([^)]+)\)"
+          if (-not $machineMatch) {
+            Write-Host "::error::Unable to determine machine type for Halide.lib"
+            exit 1
+          }
+          $machine = $machineMatch.Matches[0].Groups[1].Value
+          if ($machine -notmatch "x64|8664|AMD64") {
+            Write-Host "::error::Halide.lib is not 64-bit (detected: $machine)"
+            exit 1
+          }
+          if (-not (Test-Path $includePath)) {
+            Write-Host "::error::Halide headers not found"
+            exit 1
+          }
+          Write-Host "✓ Halide runtime files present and 64-bit."
+
+      - name: Verify Halide installation (macOS)
+        if: matrix.platform == 'mac'
         shell: bash
         run: |
-          echo "Verifying Halide installation..."
-          if [ "${{ matrix.platform }}" == "win" ]; then
-            if [ -f "third_party/halide/win/lib/Halide.lib" ]; then
-              echo "✓ Halide.lib found"
-            else
-              echo "::error::Halide.lib not found"
-              exit 1
-            fi
-            if [ -f "third_party/halide/win/bin/Halide.dll" ]; then
-              echo "✓ Halide.dll found"
-            else
-              echo "::error::Halide.dll not found"
-              exit 1
-            fi
-          elif [ "${{ matrix.platform }}" == "mac" ]; then
-            if ls third_party/halide/mac/lib/libHalide*.dylib 1> /dev/null 2>&1; then
-              echo "✓ Halide dylib found"
-              echo "Found files:"
-              ls -la third_party/halide/mac/lib/libHalide*.dylib || true
-            else
-              echo "::error::Halide dylib not found"
-              echo "Contents of third_party/halide/mac/lib:"
-              ls -la third_party/halide/mac/lib/ || true
-              exit 1
-            fi
+          echo "Verifying Halide installation (macOS)..."
+          if ! ls third_party/halide/mac/lib/libHalide*.dylib 1> /dev/null 2>&1; then
+            echo "::error::Halide dylib not found"
+            ls -la third_party/halide/mac/lib/ || true
+            exit 1
           fi
-          if [ -d "third_party/halide/include" ]; then
-            echo "✓ Halide headers found"
-          else
+          if [ ! -d "third_party/halide/include" ]; then
             echo "::error::Halide headers not found"
             exit 1
           fi
-          echo "All required Halide files are available."
+          echo "✓ Halide runtime files present."
 
       - name: Set up Xcode (Mac)
         if: matrix.platform == 'mac'
