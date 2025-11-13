@@ -94,7 +94,7 @@
 				C4E618C8095A3CE80012CA3F /* Resources */,
 				C4E618C9095A3CE80012CA3F /* Sources */,
 				C4E618CA095A3CE80012CA3F /* Frameworks */,
-				D7BF1A6E2CFF43F498C7A5B9 /* Copy Halide runtime */,
+				D7BF1A732CFF43FF98C7A5BD /* Copy Halide runtime */,
 			);
 			buildRules = (
 			);
@@ -144,7 +144,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		D7BF1A6E2CFF43F498C7A5B9 /* Copy Halide runtime */ = {
+		D7BF1A732CFF43FF98C7A5BD /* Copy Halide runtime */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
