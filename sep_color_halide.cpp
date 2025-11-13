@@ -7,19 +7,85 @@
 
 #if SEP_COLOR_ENABLE_HALIDE
 #include "third_party/halide/include/Halide.h"
+#include "third_party/halide/include/HalideRuntime.h"
 using namespace Halide;
 #endif
+
+bool SepColorHalide_GlobalInit(PF_InData *in_data, SepColorHalideGlobalState &state)
+{
+	(void)in_data;
+#if SEP_COLOR_ENABLE_HALIDE
+	state = {};
+	if (!EnsureHalideRuntimeLoaded())
+	{
+		return false;
+	}
+
+	state.runtime_loaded = true;
+
+	Halide::Target base_target = Halide::get_host_target();
+	state.target = base_target;
+
+#ifdef SEP_COLOR_HALIDE_GPU
+	try
+	{
+		Halide::Target gpu_target = base_target;
+#if defined(_WIN32)
+		gpu_target.set_feature(Halide::Target::D3D12Compute);
+#elif defined(__APPLE__)
+		gpu_target.set_feature(Halide::Target::Metal);
+#endif
+
+		// Run a tiny probe pipeline to ensure the GPU runtime is usable.
+		Halide::Var x("probe_x");
+		Halide::Func probe("sep_color_halide_probe");
+		probe(x) = Halide::cast<uint8_t>(x);
+
+		Halide::Buffer<uint8_t> tmp(1);
+		probe.compile_jit(gpu_target);
+		probe.realize(tmp, gpu_target);
+
+		state.target      = gpu_target;
+		state.gpu_enabled = true;
+	}
+	catch (...)
+	{
+		// Fallback to CPU target if GPU init fails.
+		state.target      = base_target;
+		state.gpu_enabled = false;
+	}
+#endif
+	return true;
+#else
+	(void)state;
+	return false;
+#endif
+}
+
+void SepColorHalide_GlobalRelease(SepColorHalideGlobalState &state)
+{
+#if SEP_COLOR_ENABLE_HALIDE
+	if (state.runtime_loaded)
+	{
+		Halide::JITSharedRuntime::release_all();
+	}
+	state = {};
+#else
+	(void)state;
+#endif
+}
 
 // 8-bit implementation (CPU schedule). Returns false if Halide not enabled.
 bool SepColorHalide_Render8(PF_InData *in_data,
                             PF_OutData *out_data,
                             PF_ParamDef *params[],
                             PF_LayerDef *output,
+                            const SepColorHalideGlobalState &state,
                             PF_Pixel *input_pixels,
                             PF_Pixel *output_pixels)
 {
 #if SEP_COLOR_ENABLE_HALIDE
-	if (!EnsureHalideRuntimeLoaded())
+	if (!state.runtime_loaded)
 	{
 		return false;
 	}
@@ -101,26 +167,24 @@ bool SepColorHalide_Render8(PF_InData *in_data,
 		out(x, y, 3) = cast<uint8_t>(in_buf(x, y, 3));
 
 		// Schedule
-#ifdef SEP_COLOR_HALIDE_GPU
-		Target t = get_host_target();
-#if defined(_WIN32)
-		t.set_feature(Target::D3D12Compute);
-#else
-		t.set_feature(Target::Metal);
-#endif
+		const Target &target = state.target;
+		if (state.gpu_enabled)
+		{
 		out.bound(c, 0, 4).reorder(c, x, y);
 		Var xi("xi"), yi("yi");
 		out.gpu_tile(x, y, xi, yi, 16, 16);
 		coverage.compute_at(out, x).gpu_threads(x);
-		out.compile_jit(t);
-		out.realize(out_buf, t);
-#else
+			out.compile_jit(target);
+			out.realize(out_buf, target);
+		}
+		else
+		{
 		// CPU schedule: vectorize x, parallelize y
 		out.bound(c, 0, 4).reorder(c, x, y);
 		out.vectorize(x, 16).parallel(y, 8);
 		coverage.compute_at(out, y).vectorize(x, 16);
-		out.realize(out_buf);
-#endif
+			out.realize(out_buf, target);
+		}
 		return true;
 	}
 	catch (const Halide::Error &)
@@ -146,10 +210,12 @@ bool SepColorHalide_Render16(PF_InData *in_data,
                              PF_OutData *out_data,
                              PF_ParamDef *params[],
                              PF_LayerDef *output,
+                             const SepColorHalideGlobalState &state,
                              PF_Pixel16 *input_pixels,
                              PF_Pixel16 *output_pixels)
 {
 #if SEP_COLOR_ENABLE_HALIDE
+	(void)state;
     // TODO: 16-bit pipeline (u16 domain 0..32768) similar to 8-bit
     (void)in_data;
     (void)out_data;
@@ -173,10 +239,12 @@ bool SepColorHalide_Render32(PF_InData *in_data,
                              PF_OutData *out_data,
                              PF_ParamDef *params[],
                              PF_LayerDef *output,
+                             const SepColorHalideGlobalState &state,
                              PF_PixelFloat *input_pixels,
                              PF_PixelFloat *output_pixels)
 {
 #if SEP_COLOR_ENABLE_HALIDE
+	(void)state;
     // TODO: float pipeline
     (void)in_data;
     (void)out_data;

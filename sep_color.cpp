@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <new>
 #include <thread>
 #include <vector>
 #include <cstring>
@@ -14,7 +15,7 @@
 #define SEP_COLOR_USE_PF_ITERATE 1
 #endif
 #ifndef SEP_COLOR_ENABLE_HALIDE
-#define SEP_COLOR_ENABLE_HALIDE 0
+#define SEP_COLOR_ENABLE_HALIDE 1
 #endif
 #ifndef SEP_COLOR_FAST_SQRT
 #define SEP_COLOR_FAST_SQRT 0
@@ -91,6 +92,14 @@ static inline float FastBlendFloat(float src, float dst, float coverage_alpha)
 {
 	return src + (dst - src) * coverage_alpha;
 }
+
+struct SepColorGlobalData
+{
+#if SEP_COLOR_ENABLE_HALIDE
+	SepColorHalideGlobalState halide_state;
+	bool halide_initialized = false;
+#endif
+};
 
 // Feature switches are defined above
 
@@ -516,6 +525,9 @@ GlobalSetup(
 	PF_ParamDef *params[],
 	PF_LayerDef *output)
 {
+	(void)params;
+	(void)output;
+
 	out_data->my_version = PF_VERSION(
 		MAJOR_VERSION,
 		MINOR_VERSION,
@@ -531,6 +543,74 @@ GlobalSetup(
 	// PF_OutFlag2_FLOAT_COLOR_AWARE = 0x00000001
 	// 直接値を設定（PiPLファイルと一致させるため）
 	out_data->out_flags2 = 0x08000001;
+
+#if SEP_COLOR_ENABLE_HALIDE
+	AEGP_SuiteHandler suites(in_data->pica_basicP);
+	const PF_Handle global_handle
+		= suites.HandleSuite1()->host_new_handle(sizeof(SepColorGlobalData));
+
+	if (!global_handle)
+	{
+		return PF_Err_OUT_OF_MEMORY;
+	}
+
+	out_data->global_data = global_handle;
+
+	auto *global_data = static_cast<SepColorGlobalData *>(
+		suites.HandleSuite1()->host_lock_handle(global_handle));
+
+	if (!global_data)
+	{
+		suites.HandleSuite1()->host_dispose_handle(global_handle);
+		out_data->global_data = nullptr;
+		return PF_Err_OUT_OF_MEMORY;
+	}
+
+	new (global_data) SepColorGlobalData();
+	global_data->halide_initialized = SepColorHalide_GlobalInit(
+		in_data, global_data->halide_state);
+
+	suites.HandleSuite1()->host_unlock_handle(global_handle);
+#endif
+
+	return PF_Err_NONE;
+}
+
+static PF_Err
+GlobalSetdown(
+	PF_InData *in_data,
+	PF_OutData *out_data,
+	PF_ParamDef *params[],
+	PF_LayerDef *output)
+{
+	(void)params;
+	(void)output;
+#if SEP_COLOR_ENABLE_HALIDE
+	AEGP_SuiteHandler suites(in_data->pica_basicP);
+
+	if (in_data->global_data)
+	{
+		auto *global_data = static_cast<SepColorGlobalData *>(
+			suites.HandleSuite1()->host_lock_handle(in_data->global_data));
+
+		if (global_data)
+		{
+			if (global_data->halide_initialized)
+			{
+				SepColorHalide_GlobalRelease(global_data->halide_state);
+			}
+			global_data->~SepColorGlobalData();
+			suites.HandleSuite1()->host_unlock_handle(in_data->global_data);
+		}
+
+		suites.HandleSuite1()->host_dispose_handle(in_data->global_data);
+		in_data->global_data = nullptr;
+		out_data->global_data = nullptr;
+	}
+#else
+	(void)in_data;
+	(void)out_data;
+#endif
 
 	return PF_Err_NONE;
 }
@@ -782,6 +862,13 @@ static PF_Err Render8(
 			thread.join();
 		}
 	}
+
+#if SEP_COLOR_ENABLE_HALIDE
+	if (locked_handle && in_data->global_data)
+	{
+		suites.HandleSuite1()->host_unlock_handle(in_data->global_data);
+	}
+#endif
 
 	return err;
 }
@@ -1215,6 +1302,27 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 
 	PF_EffectWorld *input = &params[0]->u.ld;
 
+#if SEP_COLOR_ENABLE_HALIDE
+	AEGP_SuiteHandler suites(in_data->pica_basicP);
+	SepColorGlobalData *global_data = nullptr;
+	const SepColorHalideGlobalState *halide_state = nullptr;
+	bool locked_handle = false;
+
+	if (in_data->global_data)
+	{
+		global_data = static_cast<SepColorGlobalData *>(
+			suites.HandleSuite1()->host_lock_handle(in_data->global_data));
+		locked_handle = true;
+
+		if (global_data && global_data->halide_initialized)
+		{
+			halide_state = &global_data->halide_state;
+		}
+	}
+#else
+	(void)out_data;
+#endif
+
 	// ビット深度に応じて適切なレンダリング関数を呼び出す
 	// PF_WORLD_IS_DEEPで16-bitを判定、それ以外はrowbytesで32-bit floatを判定
 	if (PF_WORLD_IS_DEEP(output))
@@ -1225,7 +1333,13 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 #if SEP_COLOR_USE_BASELINE
 		err = Render16(in_data, out_data, params, output, input_pixels, output_pixels);
 #elif SEP_COLOR_ENABLE_HALIDE
-		if (!SepColorHalide_Render16(in_data, out_data, params, output, input_pixels, output_pixels))
+		bool halide_ok = false;
+		if (halide_state)
+		{
+			halide_ok = SepColorHalide_Render16(
+				in_data, out_data, params, output, *halide_state, input_pixels, output_pixels);
+		}
+		if (!halide_ok)
 		{
 #if SEP_COLOR_USE_PF_ITERATE
 			err = Render16Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
@@ -1265,7 +1379,13 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 #if SEP_COLOR_USE_BASELINE
 			err = Render32(in_data, out_data, params, output, input_pixels, output_pixels);
 #elif SEP_COLOR_ENABLE_HALIDE
-			if (!SepColorHalide_Render32(in_data, out_data, params, output, input_pixels, output_pixels))
+			bool halide_ok = false;
+			if (halide_state)
+			{
+				halide_ok = SepColorHalide_Render32(
+					in_data, out_data, params, output, *halide_state, input_pixels, output_pixels);
+			}
+			if (!halide_ok)
 			{
 #if SEP_COLOR_USE_PF_ITERATE
 				err = Render32Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
@@ -1287,7 +1407,13 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 #if SEP_COLOR_USE_BASELINE
 			err = Render8(in_data, out_data, params, output, input_pixels, output_pixels);
 #elif SEP_COLOR_ENABLE_HALIDE
-			if (!SepColorHalide_Render8(in_data, out_data, params, output, input_pixels, output_pixels))
+			bool halide_ok = false;
+			if (halide_state)
+			{
+				halide_ok = SepColorHalide_Render8(
+					in_data, out_data, params, output, *halide_state, input_pixels, output_pixels);
+			}
+			if (!halide_ok)
 			{
 #if SEP_COLOR_USE_PF_ITERATE
 				err = Render8Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
@@ -1889,6 +2015,9 @@ extern "C"
 				break;
 			case PF_Cmd_GLOBAL_SETUP:
 				err = GlobalSetup(in_data, out_data, params, output);
+				break;
+			case PF_Cmd_GLOBAL_SETDOWN:
+				err = GlobalSetdown(in_data, out_data, params, output);
 				break;
 			case PF_Cmd_PARAMS_SETUP:
 				err = ParamsSetup(in_data, out_data, params, output);
