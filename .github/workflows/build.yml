@@ -59,6 +59,41 @@ jobs:
         run: |
           Write-Host "Downloading Halide for Windows..."
           
+          function Get-PeMachineType {
+            param([string]$FilePath)
+            if (-not (Test-Path $FilePath)) {
+              throw "File not found: $FilePath"
+            }
+            $fs = [System.IO.File]::Open($FilePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+            try {
+              $br = New-Object System.IO.BinaryReader($fs)
+              try {
+                $fs.Seek(0x3C, 'Begin') | Out-Null
+                $peOffset = $br.ReadInt32()
+                $fs.Seek($peOffset, 'Begin') | Out-Null
+                $signature = $br.ReadUInt32()
+                if ($signature -ne 0x00004550) {
+                  throw ("Invalid PE signature 0x{0:X8} in {1}" -f $signature, $FilePath)
+                }
+                return $br.ReadUInt16()
+              } finally {
+                $br.Dispose()
+              }
+            } finally {
+              $fs.Dispose()
+            }
+          }
+
+          function Assert-HalideBinary64 {
+            param([string]$FilePath)
+            $machine = Get-PeMachineType -FilePath $FilePath
+            Write-Host ("Detected machine type for {0}: 0x{1:X4}" -f $FilePath, $machine)
+            if ($machine -ne 0x8664) {
+              Write-Host ("::error::{0} is not 64-bit (machine 0x{1:X4})" -f $FilePath, $machine)
+              exit 1
+            }
+          }
+          
           # GitHub APIを使用してHalideのリリース情報を取得
           $halideVersion = "v21.0.0"
           $releaseUrl = "https://api.github.com/repos/halide/Halide/releases/tags/$halideVersion"
@@ -80,19 +115,46 @@ jobs:
           Write-Host ""
           Write-Host "Selecting 64-bit Windows asset..."
 
-          $windowsAsset = $releaseInfo.assets | Where-Object {
-            $_.name -match '\.zip$' -and
-            $_.name -match '(?i)windows' -and
-            $_.name -match '(?i)(x86-64|x86_64|x64|win64|64-bit|64bit)'
-          } | Select-Object -First 1
+          $windowsAssets = $releaseInfo.assets | Where-Object {
+            $_.name -match '\.zip$' -and $_.name -match '(?i)(windows|win)'
+          }
 
-          if (-not $windowsAsset) {
-            Write-Host "::error::No 64-bit Windows Halide asset found (expected markers: x86-64/x64/win64/64-bit)"
-            $releaseInfo.assets | Where-Object { $_.name -match '(?i)windows' } | ForEach-Object { Write-Host "  - $($_.name)" }
+          $filteredAssets = $windowsAssets | Where-Object {
+            $_.name -match '(?i)(x86-64|x86_64|x64|win64|64-bit|64bit)' -and
+            $_.name -notmatch '(?i)(x86-32|x86_32|win32|32-bit|32bit|\b32\b)'
+          }
+
+          if (-not $filteredAssets) {
+            Write-Host "::error::No 64-bit Windows Halide asset found among available assets."
+            if ($windowsAssets) {
+              $windowsAssets | ForEach-Object { Write-Host "  - $($_.name)" }
+            }
             exit 1
           }
 
-          if ($windowsAsset.name -match '(?i)x86-32|x86_32|win32|32-bit|32bit|\b32\b') {
+          $windowsAsset = $filteredAssets |
+            Sort-Object @{
+              Expression = {
+                if ($_.name -match '(?i)x86[-_]?64') { 0 }
+                elseif ($_.name -match '(?i)win64') { 1 }
+                elseif ($_.name -match '(?i)64[-_]?bit') { 2 }
+                elseif ($_.name -match '(?i)x64') { 3 }
+                else { 4 }
+              }
+            }, @{
+              Expression = {
+                if ($_.updated_at) { [DateTime]$_.updated_at } else { [DateTime]"1900-01-01" }
+              }
+              Descending = $true
+            } |
+            Select-Object -First 1
+
+          if (-not $windowsAsset) {
+            Write-Host "::error::Failed to choose a Windows Halide asset"
+            exit 1
+          }
+
+          if ($windowsAsset.name -match '(?i)(x86-32|x86_32|win32|32-bit|32bit|\b32\b)') {
             Write-Host "::error::Selected asset appears to be 32-bit: $($windowsAsset.name)"
             exit 1
           }
@@ -273,6 +335,9 @@ jobs:
             if ($dllFiles.Count -gt 0) {
               Copy-Item -Path $dllFiles[0].FullName -Destination $targetBinDir -Force
               Write-Host "✓ Halide.dll copied from $($dllFiles[0].FullName)"
+              $copiedDll = Join-Path $targetBinDir "Halide.dll"
+              Assert-HalideBinary64 -FilePath $copiedDll
+              Write-Host "✓ Halide.dll architecture verified as 64-bit"
             } else {
               Write-Host "::error::Halide.dll not found in $halideBinDir"
               Write-Host "Files in bin directory:"
