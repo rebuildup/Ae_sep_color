@@ -201,6 +201,6 @@ xcodebuild -project sep_color.xcodeproj -configuration Release
 - After Effects SDK（`../../../Headers`に配置が必要）
 - C++11以降のコンパイラ（Visual Studio 2022、Xcode 14以降）
 
-## ライセンス
+## LICENSE
 
 After Effects SDK使用条件に準拠
