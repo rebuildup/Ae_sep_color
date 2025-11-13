@@ -13,6 +13,7 @@
 		D0FE57610993C4E900139A60 /* sep_colorPiPL.r in Resources */ = {isa = PBXBuildFile; fileRef = D0FE575E0993C4E900139A60 /* sep_colorPiPL.r */; };
 		D0FE579D0993C5E500139A60 /* AEGP_SuiteHandler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0FE579A0993C5E500139A60 /* AEGP_SuiteHandler.cpp */; };
 		D0FE579E0993C5E500139A60 /* MissingSuiteError.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0FE579C0993C5E500139A60 /* MissingSuiteError.cpp */; };
+		D7BF1A6F2CFF43F498C7A5BA /* sep_color_halide.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D7BF1A6D2CFF43F498C7A5B8 /* sep_color_halide.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,8 @@
 		D0FE579A0993C5E500139A60 /* AEGP_SuiteHandler.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = AEGP_SuiteHandler.cpp; path = ../../../Util/AEGP_SuiteHandler.cpp; sourceTree = SOURCE_ROOT; };
 		D0FE579B0993C5E500139A60 /* AEGP_SuiteHandler.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = AEGP_SuiteHandler.h; path = ../../../Util/AEGP_SuiteHandler.h; sourceTree = SOURCE_ROOT; };
 		D0FE579C0993C5E500139A60 /* MissingSuiteError.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = MissingSuiteError.cpp; path = ../../../Util/MissingSuiteError.cpp; sourceTree = SOURCE_ROOT; };
+		D7BF1A6D2CFF43F498C7A5B8 /* sep_color_halide.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = sep_color_halide.cpp; path = ../sep_color_halide.cpp; sourceTree = SOURCE_ROOT; };
+		D7BF1A6C2CFF43F498C7A5B7 /* sep_color_halide.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = sep_color_halide.h; path = ../sep_color_halide.h; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,6 +52,8 @@
 				7EF36FB816F29807002A3CB3 /* sep_color.h */,
 				D0FE575A0993C4E900139A60 /* sep_color_Strings.cpp */,
 				D0FE575B0993C4E900139A60 /* sep_color_Strings.h */,
+				D7BF1A6D2CFF43F498C7A5B8 /* sep_color_halide.cpp */,
+				D7BF1A6C2CFF43F498C7A5B7 /* sep_color_halide.h */,
 				D0FE575E0993C4E900139A60 /* sep_colorPiPL.r */,
 				D0FE57630993C4FD00139A60 /* Supporting Code */,
 				7EF36FB616F29701002A3CB3 /* Cocoa.framework */,
@@ -142,15 +147,13 @@
 			files = (
 			);
 			inputPaths = (
-				"$(PROJECT_DIR)/../third_party/halide/mac/lib/libHalide.21.0.0.dylib",
 			);
 			name = "Copy Halide runtime";
 			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(PRODUCT_NAME).plugin/Contents/MacOS/libHalide.21.0.0.dylib",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nHALIDE_SRC=\"${PROJECT_DIR}/../third_party/halide/mac/lib/libHalide.21.0.0.dylib\"\nPLUGIN_BUNDLE=\"${TARGET_BUILD_DIR}/${PRODUCT_NAME}.plugin\"\nPLUGIN_BIN=\"${TARGET_BUILD_DIR}/${EXECUTABLE_PATH}\"\nDEST_DIR=\"${PLUGIN_BUNDLE}/Contents/MacOS\"\nif [ -f \"${HALIDE_SRC}\" ]; then\n  mkdir -p \"${DEST_DIR}\"\n  cp -f \"${HALIDE_SRC}\" \"${DEST_DIR}\"\n  /usr/bin/install_name_tool -id \"@loader_path/libHalide.21.0.0.dylib\" \"${DEST_DIR}/libHalide.21.0.0.dylib\" || true\n  if [ -f \"${PLUGIN_BIN}\" ]; then\n    /usr/bin/install_name_tool -add_rpath \"@loader_path\" \"${PLUGIN_BIN}\" 2>/dev/null || true\n    /usr/bin/install_name_tool -change \"${HALIDE_SRC}\" \"@loader_path/libHalide.21.0.0.dylib\" \"${PLUGIN_BIN}\" || true\n  fi\nfi\n";
+			shellScript = "set -e\nHALIDE_LIB_DIR=\"${PROJECT_DIR}/../third_party/halide/mac/lib\"\nPLUGIN_BUNDLE=\"${TARGET_BUILD_DIR}/${PRODUCT_NAME}.plugin\"\nPLUGIN_BIN=\"${TARGET_BUILD_DIR}/${EXECUTABLE_PATH}\"\nDEST_DIR=\"${PLUGIN_BUNDLE}/Contents/MacOS\"\nif [ -d \"${HALIDE_LIB_DIR}\" ]; then\n  HALIDE_LIB=$(find \"${HALIDE_LIB_DIR}\" -name \"libHalide*.dylib\" | head -1)\n  if [ -n \"${HALIDE_LIB}\" ] && [ -f \"${HALIDE_LIB}\" ]; then\n    HALIDE_FILENAME=$(basename \"${HALIDE_LIB}\")\n    mkdir -p \"${DEST_DIR}\"\n    cp -f \"${HALIDE_LIB}\" \"${DEST_DIR}/${HALIDE_FILENAME}\"\n    /usr/bin/install_name_tool -id \"@loader_path/${HALIDE_FILENAME}\" \"${DEST_DIR}/${HALIDE_FILENAME}\" || true\n    if [ -f \"${PLUGIN_BIN}\" ]; then\n      /usr/bin/install_name_tool -add_rpath \"@loader_path\" \"${PLUGIN_BIN}\" 2>/dev/null || true\n      /usr/bin/install_name_tool -change \"${HALIDE_LIB}\" \"@loader_path/${HALIDE_FILENAME}\" \"${PLUGIN_BIN}\" || true\n    fi\n  fi\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -161,6 +164,7 @@
 			files = (
 				D0FE575F0993C4E900139A60 /* sep_color_Strings.cpp in Sources */,
 				D0FE57600993C4E900139A60 /* sep_color.cpp in Sources */,
+				D7BF1A6F2CFF43F498C7A5BA /* sep_color_halide.cpp in Sources */,
 				D0FE579D0993C5E500139A60 /* AEGP_SuiteHandler.cpp in Sources */,
 				D0FE579E0993C5E500139A60 /* MissingSuiteError.cpp in Sources */,
 			);
@@ -174,7 +178,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++11";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
@@ -224,6 +228,14 @@
 					../../../Util,
 					../../../Headers/SP,
 					../../../Resources,
+					"$(PROJECT_DIR)/../third_party/halide/include",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/../third_party/halide/mac/lib",
+				);
+				OTHER_LDFLAGS = (
+					"-rpath",
+					"@loader_path",
 				);
 				ONLY_ACTIVE_ARCH = YES;
 				REZ_PREPROCESSOR_DEFINITIONS = __MACH__;
@@ -237,7 +249,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++11";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
@@ -291,6 +303,14 @@
 					../../../Util,
 					../../../Headers/SP,
 					../../../Resources,
+					"$(PROJECT_DIR)/../third_party/halide/include",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/../third_party/halide/mac/lib",
+				);
+				OTHER_LDFLAGS = (
+					"-rpath",
+					"@loader_path",
 				);
 				ONLY_ACTIVE_ARCH = NO;
 				REZ_PREPROCESSOR_DEFINITIONS = __MACH__;
@@ -303,12 +323,17 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++11";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_MODEL_TUNING = G5;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"SEP_COLOR_ENABLE_HALIDE=1",
+					"SEP_COLOR_HALIDE_GPU=1",
+					"$(inherited)",
+				);
 				GENERATE_PKGINFO_FILE = YES;
 				INFOPLIST_FILE = "sep_color.plugin-Info.plist";
 				INSTALL_PATH = "$(HOME)/Library/Bundles";
@@ -323,7 +348,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++11";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -332,6 +357,8 @@
 				GCC_MODEL_TUNING = G5;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"NDEBUG=1",
+					"SEP_COLOR_ENABLE_HALIDE=1",
+					"SEP_COLOR_HALIDE_GPU=1",
 					"$(inherited)",
 				);
 				GENERATE_PKGINFO_FILE = YES;

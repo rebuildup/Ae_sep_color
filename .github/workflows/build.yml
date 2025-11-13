@@ -414,8 +414,18 @@ jobs:
           
           # ファイルをコピー
           if [ -d "$HALIDE_LIB_DIR" ]; then
-            cp "$HALIDE_LIB_DIR"/libHalide*.dylib "$TARGET_LIB_DIR/" || true
-            echo "✓ Halide libraries copied"
+            # Copy all Halide dylib files
+            if ls "$HALIDE_LIB_DIR"/libHalide*.dylib 1> /dev/null 2>&1; then
+              cp "$HALIDE_LIB_DIR"/libHalide*.dylib "$TARGET_LIB_DIR/" || true
+              echo "✓ Halide libraries copied"
+              echo "Copied files:"
+              ls -la "$TARGET_LIB_DIR"/libHalide*.dylib || true
+            else
+              echo "::error::No Halide dylib files found in $HALIDE_LIB_DIR"
+              echo "Contents of $HALIDE_LIB_DIR:"
+              ls -la "$HALIDE_LIB_DIR" || true
+              exit 1
+            fi
           else
             echo "::error::Halide lib directory not found: $HALIDE_LIB_DIR"
             exit 1
@@ -451,8 +461,12 @@ jobs:
           elif [ "${{ matrix.platform }}" == "mac" ]; then
             if ls third_party/halide/mac/lib/libHalide*.dylib 1> /dev/null 2>&1; then
               echo "✓ Halide dylib found"
+              echo "Found files:"
+              ls -la third_party/halide/mac/lib/libHalide*.dylib || true
             else
               echo "::error::Halide dylib not found"
+              echo "Contents of third_party/halide/mac/lib:"
+              ls -la third_party/halide/mac/lib/ || true
               exit 1
             fi
           fi
@@ -943,12 +957,22 @@ jobs:
           echo "  Plugin directory: $PLUGIN_DIR"
           echo "  Current directory: $(pwd)"
           
-          # Verify Halide library exists
-          HALIDE_LIB="../third_party/halide/mac/lib/libHalide.21.0.0.dylib"
-          if [ ! -f "$HALIDE_LIB" ]; then
-            echo "::error::Halide library not found: $HALIDE_LIB"
+          # Verify Halide library exists (flexible filename matching)
+          HALIDE_LIB_DIR="../third_party/halide/mac/lib"
+          HALIDE_LIB=""
+          if [ -d "$HALIDE_LIB_DIR" ]; then
+            # Try exact match first
+            if [ -f "$HALIDE_LIB_DIR/libHalide.21.0.0.dylib" ]; then
+              HALIDE_LIB="$HALIDE_LIB_DIR/libHalide.21.0.0.dylib"
+            else
+              # Try to find any libHalide*.dylib file
+              HALIDE_LIB=$(find "$HALIDE_LIB_DIR" -name "libHalide*.dylib" | head -1)
+            fi
+          fi
+          if [ -z "$HALIDE_LIB" ] || [ ! -f "$HALIDE_LIB" ]; then
+            echo "::error::Halide library not found in $HALIDE_LIB_DIR"
             echo "Contents of third_party/halide/mac/lib:"
-            ls -la "../third_party/halide/mac/lib/" || true
+            ls -la "$HALIDE_LIB_DIR" || true
             exit 1
           fi
           echo "✓ Halide library found: $HALIDE_LIB"
