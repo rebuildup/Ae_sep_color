@@ -1080,11 +1080,11 @@ jobs:
           New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
           
           Write-Host "Build configuration:"
-          Write-Host "  Configuration: Debug"
+          Write-Host "  Configuration: Release"
           Write-Host "  Platform: x64"
           
           msbuild sep_color.sln `
-            /p:Configuration=Debug `
+            /p:Configuration=Release `
             /p:Platform=x64 `
             /t:Build `
             /v:normal `
@@ -1109,9 +1109,9 @@ jobs:
           Write-Host "Searching for build artifact..."
           
           $searchPaths = @(
-            "x64\Debug\sep_color.aex",
+            "x64\Release\sep_color.aex",
             "..\output\sep_color.aex",
-            "Debug\sep_color.aex",
+            "Release\sep_color.aex",
             ".\sep_color.aex"
           )
           
