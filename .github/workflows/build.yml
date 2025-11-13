@@ -92,75 +92,87 @@ jobs:
             }
           }
           
-          # まず x86-64, x86_64, x64, win64, 64 を含むものを優先的に探す
-          # 注意: x86-64 は 64bit 版なので、x86 を含むが x86-32 を含まないものを探す
-          $windowsAsset = $allAssets | Where-Object {
-            $_.NameLower -match '\.zip$' -and 
-            ($_.NameLower -match 'x86-64' -or $_.NameLower -match 'x86_64' -or $_.NameLower -match 'x64' -or $_.NameLower -match 'win64' -or $_.NameLower -match '-64') -and
-            $_.NameLower -match 'windows' -and
-            $_.NameLower -notmatch 'x86-32' -and
-            $_.NameLower -notmatch 'x86_32'
-          } | Select-Object -First 1
+          # 64bit 版を確実に選択する（アセット名のパターンマッチング）
+          # 優先順位: x64/win64/64bit を含む > 32bit/win32 を含まない
+          $windowsAsset = $null
           
-          if ($windowsAsset) {
-            Write-Host "Found x64 asset: $($windowsAsset.Original.name)"
-            $windowsAsset = $windowsAsset.Original
+          # パターン1: 明示的に 64bit を示すアセット
+          # Halide の命名規則: Halide-{version}-x86-64-windows-{hash}.zip
+          # x86-64 を最優先で検索（Halide の標準命名規則）
+          $candidates = $allAssets | Where-Object {
+            $_.NameLower -match '\.zip$' -and 
+            $_.NameLower -match 'windows' -and
+            ($_.NameLower -match 'x86-64' -or $_.NameLower -match 'x86_64' -or $_.NameLower -match 'x64' -or $_.NameLower -match 'win64' -or $_.NameLower -match '64-bit' -or $_.NameLower -match '64bit') -and
+            $_.NameLower -notmatch 'x86-32' -and
+            $_.NameLower -notmatch 'x86_32' -and
+            $_.NameLower -notmatch 'win32' -and
+            $_.NameLower -notmatch '32-bit' -and
+            $_.NameLower -notmatch '32bit'
+          }
+          
+          if ($candidates) {
+            # x86-64 を含むアセットを優先的に選択
+            $x86_64Asset = $candidates | Where-Object { $_.NameLower -match 'x86-64' } | Select-Object -First 1
+            if ($x86_64Asset) {
+              $windowsAsset = $x86_64Asset.Original
+              Write-Host "Found 64bit asset (x86-64): $($windowsAsset.name)"
+            } else {
+              $windowsAsset = $candidates[0].Original
+              Write-Host "Found 64bit asset (explicit): $($windowsAsset.name)"
+            }
           } else {
-            Write-Host "x64 asset not found, searching for any Windows asset (excluding explicit 32bit)..."
-            
-            # x64 が見つからない場合、32bit を明示的に含まない Windows アセットを探す
-            $windowsAsset = $allAssets | Where-Object {
+            # パターン2: 32bit を明示的に含まないアセット（デフォルトが 64bit の可能性）
+            $candidates = $allAssets | Where-Object {
               $_.NameLower -match '\.zip$' -and 
               $_.NameLower -match 'windows' -and
               $_.NameLower -notmatch 'x86-32' -and
               $_.NameLower -notmatch 'x86_32' -and
-              $_.NameLower -notmatch '\b32\b' -and
-              $_.NameLower -notmatch 'i386' -and
+              $_.NameLower -notmatch 'win32' -and
               $_.NameLower -notmatch '32-bit' -and
               $_.NameLower -notmatch '32bit' -and
-              $_.NameLower -notmatch 'win32'
-            } | Select-Object -First 1
+              $_.NameLower -notmatch '\b32\b'
+            }
             
-            if ($windowsAsset) {
-              Write-Host "Found Windows asset: $($windowsAsset.Original.name)"
-              Write-Host "::warning::This asset may not be 64bit. Will verify after download."
-              $windowsAsset = $windowsAsset.Original
-            } else {
-              # 最後の手段: Windows を含むすべてのアセットを表示して、最初のものを試す
-              Write-Host "Searching for any Windows asset (will verify architecture after download)..."
-              $windowsAssets = $allAssets | Where-Object {
-                $_.NameLower -match '\.zip$' -and 
-                $_.NameLower -match 'windows'
-              }
-              
-              if ($windowsAssets) {
-                Write-Host "Found Windows assets:"
-                $windowsAssets | ForEach-Object { Write-Host "  - $($_.Original.name)" }
-                $windowsAsset = $windowsAssets[0].Original
-                Write-Host "Selected: $($windowsAsset.name)"
-                Write-Host "::warning::Architecture not specified in name. Will verify after download."
-              }
+            if ($candidates) {
+              $windowsAsset = $candidates[0].Original
+              Write-Host "Found Windows asset (no 32bit marker): $($windowsAsset.name)"
+              Write-Host "::warning::Asset name does not explicitly indicate 64bit. Will verify after download."
             }
           }
           
           # それでも見つからない場合、エラーにする
           if (-not $windowsAsset) {
-            Write-Host "::error::No Windows asset found"
+            Write-Host "::error::No suitable Windows 64bit asset found"
             Write-Host ""
             Write-Host "Available Windows-related assets:"
-            $releaseInfo.assets | Where-Object {
+            $windowsRelated = $releaseInfo.assets | Where-Object {
               $nameLower = $_.name.ToLower()
               $nameLower -match '\.zip$' -and 
               $nameLower -match 'windows'
-            } | ForEach-Object { Write-Host "  - $($_.name)" }
+            }
+            if ($windowsRelated) {
+              $windowsRelated | ForEach-Object { Write-Host "  - $($_.name)" }
+            } else {
+              Write-Host "  (none found)"
+            }
             Write-Host ""
-            Write-Host "All available assets:"
+            Write-Host "All available assets in this release:"
             $releaseInfo.assets | ForEach-Object { Write-Host "  - $($_.name)" }
+            Write-Host ""
+            Write-Host "::error::Halide v21.0.0 may not include pre-built Windows 64bit binaries."
+            Write-Host "You may need to:"
+            Write-Host "  1. Build Halide from source"
+            Write-Host "  2. Use a different Halide version that includes Windows 64bit binaries"
+            Write-Host "  3. Disable Halide support in the plugin"
             exit 1
           }
           
-          Write-Host "Found asset: $($windowsAsset.name)"
+          Write-Host ""
+          Write-Host "Selected asset: $($windowsAsset.name)"
           Write-Host "Download URL: $($windowsAsset.browser_download_url)"
+          Write-Host ""
+          Write-Host "Note: Architecture will be verified after download."
+          Write-Host "If this is a 32bit build, the build will fail with a clear error message."
           
           $halideZip = "$env:TEMP\Halide-windows.zip"
           Invoke-WebRequest -Uri $windowsAsset.browser_download_url -OutFile $halideZip -UseBasicParsing
@@ -183,21 +195,22 @@ jobs:
             Write-Host "Found Halide root directory: $($halideRoot.FullName)"
           }
           
-          # 複数のパスを試す
+          # Halide の標準構造: Halide-{version}-x86-64-windows/
+          #   - bin/Release/Halide.dll
+          #   - lib/Release/Halide.lib
+          #   - include/
           $possibleLibPaths = @(
-            (Join-Path $halideRoot.FullName "lib"),
-            (Join-Path $halideRoot.FullName "lib\x64"),
             (Join-Path $halideRoot.FullName "lib\Release"),
-            (Join-Path $halideExtractDir "lib"),
-            (Join-Path $halideExtractDir "lib\x64")
+            (Join-Path $halideRoot.FullName "lib"),
+            (Join-Path $halideExtractDir "lib\Release"),
+            (Join-Path $halideExtractDir "lib")
           )
           
           $possibleBinPaths = @(
-            (Join-Path $halideRoot.FullName "bin"),
-            (Join-Path $halideRoot.FullName "bin\x64"),
             (Join-Path $halideRoot.FullName "bin\Release"),
-            (Join-Path $halideExtractDir "bin"),
-            (Join-Path $halideExtractDir "bin\x64")
+            (Join-Path $halideRoot.FullName "bin"),
+            (Join-Path $halideExtractDir "bin\Release"),
+            (Join-Path $halideExtractDir "bin")
           )
           
           $possibleIncludePaths = @(
@@ -243,30 +256,13 @@ jobs:
           New-Item -ItemType Directory -Path $targetLibDir -Force | Out-Null
           New-Item -ItemType Directory -Path $targetBinDir -Force | Out-Null
           
-          # ファイルをコピー（x64版を優先的に探す）
+          # ファイルをコピー（lib ディレクトリから直接探す）
           if ($halideLibDir -and (Test-Path $halideLibDir)) {
-            # まず x64 ディレクトリ内の lib を探す
-            $libFiles = @()
-            $x64LibPath = Join-Path $halideLibDir "x64"
-            if (Test-Path $x64LibPath) {
-              $libFiles = Get-ChildItem -Path $x64LibPath -Filter "Halide.lib" -Recurse
-              Write-Host "Searching in x64 subdirectory: $x64LibPath"
-            }
-            
-            # x64 ディレクトリにない場合、ルート lib ディレクトリを探す
-            if ($libFiles.Count -eq 0) {
-              $libFiles = Get-ChildItem -Path $halideLibDir -Filter "Halide.lib" -Recurse
-              Write-Host "Searching in lib directory: $halideLibDir"
-            }
+            $libFiles = Get-ChildItem -Path $halideLibDir -Filter "Halide.lib" -Recurse
+            Write-Host "Searching for Halide.lib in: $halideLibDir"
             
             if ($libFiles.Count -gt 0) {
-              # 複数見つかった場合、x64 を含むパスを優先
-              $selectedLib = $libFiles | Where-Object { $_.FullName -match 'x64|win64' } | Select-Object -First 1
-              if (-not $selectedLib) {
-                $selectedLib = $libFiles[0]
-              }
-              
-              $sourceLib = $selectedLib.FullName
+              $sourceLib = $libFiles[0].FullName
               Copy-Item -Path $sourceLib -Destination $targetLibDir -Force
               Write-Host "✓ Halide.lib copied from $sourceLib"
               
@@ -314,19 +310,12 @@ jobs:
                     }
                   }
                   
-                  # dumpbin が使えない場合、ファイルサイズで推測（64bit 版は通常大きい）
+                  # dumpbin が使えない場合、エラーにする（アーキテクチャ検証は必須）
                   if (-not $archVerified) {
-                    Write-Host "⚠ dumpbin not available, checking file size..."
-                    $libSize = (Get-Item $copiedLib).Length
-                    Write-Host "Halide.lib size: $libSize bytes"
-                    # 32bit 版は通常 1MB 以下、64bit 版は 2MB 以上
-                    if ($libSize -lt 1000000) {
-                      Write-Host "::error::Halide.lib appears to be 32bit (file size too small: $libSize bytes)"
-                      Write-Host "Expected 64bit library to be larger. Please verify the downloaded Halide release."
-                      exit 1
-                    } else {
-                      Write-Host "✓ Halide.lib size suggests 64bit (will be verified during link)"
-                    }
+                    Write-Host "::error::Cannot verify Halide.lib architecture (dumpbin not available)"
+                    Write-Host "The library architecture must be verified before proceeding."
+                    Write-Host "Please ensure dumpbin is available or the Halide release includes 64bit libraries."
+                    exit 1
                   }
                 } catch {
                   Write-Host "::error::Architecture verification failed: $_"
@@ -348,28 +337,12 @@ jobs:
           }
           
           if ($halideBinDir -and (Test-Path $halideBinDir)) {
-            # x64 ディレクトリ内の DLL を優先的に探す
-            $dllFiles = @()
-            $x64BinPath = Join-Path $halideBinDir "x64"
-            if (Test-Path $x64BinPath) {
-              $dllFiles = Get-ChildItem -Path $x64BinPath -Filter "Halide.dll" -Recurse
-              Write-Host "Searching in x64 subdirectory: $x64BinPath"
-            }
-            
-            if ($dllFiles.Count -eq 0) {
-              $dllFiles = Get-ChildItem -Path $halideBinDir -Filter "Halide.dll" -Recurse
-              Write-Host "Searching in bin directory: $halideBinDir"
-            }
+            $dllFiles = Get-ChildItem -Path $halideBinDir -Filter "Halide.dll" -Recurse
+            Write-Host "Searching for Halide.dll in: $halideBinDir"
             
             if ($dllFiles.Count -gt 0) {
-              # 複数見つかった場合、x64 を含むパスを優先
-              $selectedDll = $dllFiles | Where-Object { $_.FullName -match 'x64|win64' } | Select-Object -First 1
-              if (-not $selectedDll) {
-                $selectedDll = $dllFiles[0]
-              }
-              
-              Copy-Item -Path $selectedDll.FullName -Destination $targetBinDir -Force
-              Write-Host "✓ Halide.dll copied from $($selectedDll.FullName)"
+              Copy-Item -Path $dllFiles[0].FullName -Destination $targetBinDir -Force
+              Write-Host "✓ Halide.dll copied from $($dllFiles[0].FullName)"
             } else {
               Write-Host "::error::Halide.dll not found in $halideBinDir"
               Write-Host "Files in bin directory:"
