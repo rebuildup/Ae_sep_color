@@ -220,6 +220,7 @@ static PF_Err Render8Iterate(
 	PF_Pixel *input_pixels,
 	PF_Pixel *output_pixels)
 {
+	PF_Err err = PF_Err_NONE;
 	(void)out_data;
 	(void)input_pixels;
 	(void)output_pixels; // AE passes worlds in iterate call
@@ -249,6 +250,14 @@ static PF_Err Render8Iterate(
 	PF_Rect area{0, 0, output->width, output->height};
 	if (rc.mode != 1)
 	{
+		// Circle mode only affects a bounded region; copy input -> output once
+		// so pixels outside the circle keep their original color/alpha.
+		err = PF_COPY(&params[ID_INPUT]->u.ld, output, nullptr, nullptr);
+		if (err != PF_Err_NONE)
+		{
+			return err;
+		}
+
 		const float ex = (rc.radius + rc.edge_width) / std::max(rc.downsample_x, 1e-6f);
 		const float ey = (rc.radius + rc.edge_width) / std::max(rc.downsample_y, 1e-6f);
 		const int x0 = std::max(0, static_cast<int>(std::floor(rc.anchor_x - ex)));
@@ -261,7 +270,7 @@ static PF_Err Render8Iterate(
 		area.bottom = y1;
 	}
 	PF_EffectWorld *src = &params[0]->u.ld;
-	PF_Err err = suites.Iterate8Suite1()->iterate(
+	err = suites.Iterate8Suite1()->iterate(
 		in_data,
 		0,
 		output->height,
@@ -349,6 +358,7 @@ static PF_Err Render16Iterate(
 	PF_Pixel16 *input_pixels,
 	PF_Pixel16 *output_pixels)
 {
+	PF_Err err = PF_Err_NONE;
 	(void)out_data;
 	(void)input_pixels;
 	(void)output_pixels;
@@ -379,8 +389,29 @@ static PF_Err Render16Iterate(
 
 	AEGP_SuiteHandler suites(in_data->pica_basicP);
 	PF_Rect area{0, 0, output->width, output->height};
+	if (rc.mode != 1)
+	{
+		// Circle mode: copy full frame once, then iterate only over the
+		// affected bounding box so alpha outside remains unchanged.
+		err = PF_COPY(&params[ID_INPUT]->u.ld, output, nullptr, nullptr);
+		if (err != PF_Err_NONE)
+		{
+			return err;
+		}
+
+		const float ex = (rc.radius + rc.edge_width) / std::max(rc.downsample_x, 1e-6f);
+		const float ey = (rc.radius + rc.edge_width) / std::max(rc.downsample_y, 1e-6f);
+		const int x0 = std::max(0, static_cast<int>(std::floor(rc.anchor_x - ex)));
+		const int x1 = std::min(rc.width, static_cast<int>(std::ceil(rc.anchor_x + ex)) + 1);
+		const int y0 = std::max(0, static_cast<int>(std::floor(rc.anchor_y - ey)));
+		const int y1 = std::min(rc.height, static_cast<int>(std::ceil(rc.anchor_y + ey)) + 1);
+		area.left = x0;
+		area.right = x1;
+		area.top = y0;
+		area.bottom = y1;
+	}
 	PF_EffectWorld *src = &params[0]->u.ld;
-	return suites.Iterate16Suite1()->iterate(
+	err = suites.Iterate16Suite1()->iterate(
 		in_data,
 		0,
 		output->height,
@@ -442,6 +473,7 @@ static PF_Err Render32Iterate(
 	PF_PixelFloat *input_pixels,
 	PF_PixelFloat *output_pixels)
 {
+	PF_Err err = PF_Err_NONE;
 	(void)out_data;
 	(void)input_pixels;
 	(void)output_pixels;
@@ -461,8 +493,29 @@ static PF_Err Render32Iterate(
 
 	AEGP_SuiteHandler suites(in_data->pica_basicP);
 	PF_Rect area{0, 0, output->width, output->height};
+	if (rc.mode != 1)
+	{
+		// Circle mode: copy full frame once, then iterate only over the
+		// affected bounding box so alpha outside remains unchanged.
+		err = PF_COPY(&params[ID_INPUT]->u.ld, output, nullptr, nullptr);
+		if (err != PF_Err_NONE)
+		{
+			return err;
+		}
+
+		const float ex = (rc.radius + rc.edge_width) / std::max(rc.downsample_x, 1e-6f);
+		const float ey = (rc.radius + rc.edge_width) / std::max(rc.downsample_y, 1e-6f);
+		const int x0 = std::max(0, static_cast<int>(std::floor(rc.anchor_x - ex)));
+		const int x1 = std::min(rc.width, static_cast<int>(std::ceil(rc.anchor_x + ex)) + 1);
+		const int y0 = std::max(0, static_cast<int>(std::floor(rc.anchor_y - ey)));
+		const int y1 = std::min(rc.height, static_cast<int>(std::ceil(rc.anchor_y + ey)) + 1);
+		area.left = x0;
+		area.right = x1;
+		area.top = y0;
+		area.bottom = y1;
+	}
 	PF_EffectWorld *src = &params[0]->u.ld;
-	return suites.IterateFloatSuite1()->iterate(
+	err = suites.IterateFloatSuite1()->iterate(
 		in_data,
 		0,
 		output->height,
