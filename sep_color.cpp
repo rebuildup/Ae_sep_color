@@ -1253,19 +1253,12 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 	bool is_32bit_float = false;
 	
 	// 方法1: in_data->pixelFormatを使用（推奨）
-	// 注意: 定数名はSDKバージョンによって異なる可能性があります
-	// 32-bit floatは通常、pixelFormat == 2 または PF_PixelFormat_ARGB128
-	// 定数が利用可能な場合はそれを使用、そうでない場合は数値を使用
+	// 32-bit floatは通常、pixelFormat == 2
+	// 定数名はSDKバージョンによって異なる可能性があるため、数値で判定
 	if (in_data->pixelFormat == 2)
 	{
 		is_32bit_float = true;
 	}
-#ifdef PF_PixelFormat_ARGB128
-	else if (in_data->pixelFormat == PF_PixelFormat_ARGB128)
-	{
-		is_32bit_float = true;
-	}
-#endif
 	// 方法2: rowbytesで判定（フォールバック）
 	else if (!PF_WORLD_IS_DEEP(output) && output->width > 0 && output->rowbytes > 0)
 	{
