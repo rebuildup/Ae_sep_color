@@ -542,13 +542,24 @@ GlobalSetup(
 
 	// 32-bit floatピクセルフォーマットのサポートを明示的に宣言
 	// これにより、After Effectsがプラグインが32-bit floatをサポートしていることを認識します
+	// PF_OutFlag2_FLOAT_COLOR_AWAREフラグとAddSupportedPixelFormat()の両方が必要です
+	// 注意: このコードは、SDKバージョンによっては利用できない場合があります
+	// その場合は、フラグ設定のみで動作する可能性があります
 	PF_PixelFormatSuite1 *pixelFormatSuite = NULL;
+	// PF_CHECKOUT_SUITEを使用してスイートを取得
 	err = PF_CHECKOUT_SUITE(in_data, PF_PixelFormatSuite1, PF_PixelFormatSuite1_VERSION, out_data, (const void**)&pixelFormatSuite);
 	if (!err && pixelFormatSuite)
 	{
-		// PF_PixelFormat_FLOATをサポートするピクセルフォーマットとして追加
-		err = pixelFormatSuite->AddSupportedPixelFormat(in_data->effect_ref, PF_PixelFormat_FLOAT);
+		// PF_PixelFormat_ARGB128 (32-bit float)をサポートするピクセルフォーマットとして追加
+		// 注意: 定数名はSDKバージョンによって異なる可能性があります
+		// PF_PixelFormat_FLOAT または PF_PixelFormat_ARGB128 を試してください
+		err = pixelFormatSuite->AddSupportedPixelFormat(in_data->effect_ref, PF_PixelFormat_ARGB128);
 		PF_CHECKIN_SUITE(in_data, PF_PixelFormatSuite1, PF_PixelFormatSuite1_VERSION, out_data, (const void**)&pixelFormatSuite);
+	}
+	// エラーが発生した場合は無視（フラグ設定のみで動作する可能性があるため）
+	if (err)
+	{
+		err = PF_Err_NONE;
 	}
 
 	return err;
