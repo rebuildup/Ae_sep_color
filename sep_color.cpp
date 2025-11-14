@@ -149,11 +149,6 @@ struct IterateRefcon
 static PF_Err IteratePix8(void *refcon, A_long x, A_long y, PF_Pixel *in, PF_Pixel *out)
 {
 	const IterateRefcon *rc = reinterpret_cast<const IterateRefcon *>(refcon);
-	if (in->alpha == 0)
-	{
-		*out = *in;
-		return PF_Err_NONE;
-	}
 	const float fx = (static_cast<float>(x) - rc->anchor_x) * rc->downsample_x;
 	const float fy = (static_cast<float>(y) - rc->anchor_y) * rc->downsample_y;
 	float coverage = 0.0f;
@@ -209,10 +204,10 @@ static PF_Err IteratePix8(void *refcon, A_long x, A_long y, PF_Pixel *in, PF_Pix
 		out->alpha = in->alpha;
 		return PF_Err_NONE;
 	}
-	const float ca = coverage * (static_cast<float>(in->alpha) * INV_255);
-	out->red = FastBlend(in->red, rc->color8.red, ca);
-	out->green = FastBlend(in->green, rc->color8.green, ca);
-	out->blue = FastBlend(in->blue, rc->color8.blue, ca);
+	// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+	out->red = FastBlend(in->red, rc->color8.red, coverage);
+	out->green = FastBlend(in->green, rc->color8.green, coverage);
+	out->blue = FastBlend(in->blue, rc->color8.blue, coverage);
 	out->alpha = in->alpha;
 	return PF_Err_NONE;
 }
@@ -283,11 +278,6 @@ static PF_Err Render8Iterate(
 static PF_Err IteratePix16(void *refcon, A_long x, A_long y, PF_Pixel16 *in, PF_Pixel16 *out)
 {
 	const IterateRefcon *rc = reinterpret_cast<const IterateRefcon *>(refcon);
-	if (in->alpha == 0)
-	{
-		*out = *in;
-		return PF_Err_NONE;
-	}
 	const float fx = (static_cast<float>(x) - rc->anchor_x) * rc->downsample_x;
 	const float fy = (static_cast<float>(y) - rc->anchor_y) * rc->downsample_y;
 	float coverage;
@@ -343,10 +333,10 @@ static PF_Err IteratePix16(void *refcon, A_long x, A_long y, PF_Pixel16 *in, PF_
 		out->alpha = in->alpha;
 		return PF_Err_NONE;
 	}
-	const float ca = coverage * (static_cast<float>(in->alpha) * INV_32768);
-	out->red = FastBlend16(in->red, rc->r16, ca);
-	out->green = FastBlend16(in->green, rc->g16, ca);
-	out->blue = FastBlend16(in->blue, rc->b16, ca);
+	// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+	out->red = FastBlend16(in->red, rc->r16, coverage);
+	out->green = FastBlend16(in->green, rc->g16, coverage);
+	out->blue = FastBlend16(in->blue, rc->b16, coverage);
 	out->alpha = in->alpha;
 	return PF_Err_NONE;
 }
@@ -404,11 +394,6 @@ static PF_Err Render16Iterate(
 static PF_Err IteratePix32(void *refcon, A_long x, A_long y, PF_PixelFloat *in, PF_PixelFloat *out)
 {
 	const IterateRefcon *rc = reinterpret_cast<const IterateRefcon *>(refcon);
-	if (in->alpha <= 0.0f)
-	{
-		*out = *in;
-		return PF_Err_NONE;
-	}
 	const float fx = (static_cast<float>(x) - rc->anchor_x) * rc->downsample_x;
 	const float fy = (static_cast<float>(y) - rc->anchor_y) * rc->downsample_y;
 	float coverage;
@@ -441,10 +426,10 @@ static PF_Err IteratePix32(void *refcon, A_long x, A_long y, PF_PixelFloat *in, 
 		out->alpha = in->alpha;
 		return PF_Err_NONE;
 	}
-	const float ca = coverage * in->alpha;
-	out->red = FastBlendFloat(in->red, r, ca);
-	out->green = FastBlendFloat(in->green, g, ca);
-	out->blue = FastBlendFloat(in->blue, b, ca);
+	// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+	out->red = FastBlendFloat(in->red, r, coverage);
+	out->green = FastBlendFloat(in->green, g, coverage);
+	out->blue = FastBlendFloat(in->blue, b, coverage);
 	out->alpha = in->alpha;
 	return PF_Err_NONE;
 }
@@ -703,11 +688,10 @@ static PF_Err Render8(
 					}
 					else
 					{
-						// 高速ブレンディング
-						const float coverage_alpha = coverage * input_px.alpha * INV_255;
-						output_row[x].red = FastBlend(input_px.red, color.red, coverage_alpha);
-						output_row[x].green = FastBlend(input_px.green, color.green, coverage_alpha);
-						output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage_alpha);
+						// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+						output_row[x].red = FastBlend(input_px.red, color.red, coverage);
+						output_row[x].green = FastBlend(input_px.green, color.green, coverage);
+						output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage);
 						output_row[x].alpha = input_px.alpha;
 					}
 				}
@@ -782,11 +766,10 @@ static PF_Err Render8(
 					}
 					else
 					{
-						// 高速ブレンディング
-						const float coverage_alpha = coverage * input_px.alpha * INV_255;
-						output_row[x].red = FastBlend(input_px.red, color.red, coverage_alpha);
-						output_row[x].green = FastBlend(input_px.green, color.green, coverage_alpha);
-						output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage_alpha);
+						// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+						output_row[x].red = FastBlend(input_px.red, color.red, coverage);
+						output_row[x].green = FastBlend(input_px.green, color.green, coverage);
+						output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage);
 						output_row[x].alpha = input_px.alpha;
 					}
 				}
@@ -919,10 +902,10 @@ static PF_Err Render16(
 					}
 					else
 					{
-						const float coverage_alpha = coverage * input_px.alpha * INV_32768;
-						output_row[x].red = FastBlend16(input_px.red, color.red, coverage_alpha);
-						output_row[x].green = FastBlend16(input_px.green, color.green, coverage_alpha);
-						output_row[x].blue = FastBlend16(input_px.blue, color.blue, coverage_alpha);
+						// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+						output_row[x].red = FastBlend16(input_px.red, color.red, coverage);
+						output_row[x].green = FastBlend16(input_px.green, color.green, coverage);
+						output_row[x].blue = FastBlend16(input_px.blue, color.blue, coverage);
 						output_row[x].alpha = input_px.alpha;
 					}
 				}
@@ -995,10 +978,10 @@ static PF_Err Render16(
 					}
 					else
 					{
-						const float coverage_alpha = coverage * input_px.alpha * INV_32768;
-						output_row[x].red = FastBlend16(input_px.red, color.red, coverage_alpha);
-						output_row[x].green = FastBlend16(input_px.green, color.green, coverage_alpha);
-						output_row[x].blue = FastBlend16(input_px.blue, color.blue, coverage_alpha);
+						// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+						output_row[x].red = FastBlend16(input_px.red, color.red, coverage);
+						output_row[x].green = FastBlend16(input_px.green, color.green, coverage);
+						output_row[x].blue = FastBlend16(input_px.blue, color.blue, coverage);
 						output_row[x].alpha = input_px.alpha;
 					}
 				}
@@ -1129,10 +1112,10 @@ static PF_Err Render32(
 					}
 					else
 					{
-						const float coverage_alpha = coverage * input_px.alpha;
-						output_row[x].red = FastBlendFloat(input_px.red, color.red, coverage_alpha);
-						output_row[x].green = FastBlendFloat(input_px.green, color.green, coverage_alpha);
-						output_row[x].blue = FastBlendFloat(input_px.blue, color.blue, coverage_alpha);
+						// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+						output_row[x].red = FastBlendFloat(input_px.red, color.red, coverage);
+						output_row[x].green = FastBlendFloat(input_px.green, color.green, coverage);
+						output_row[x].blue = FastBlendFloat(input_px.blue, color.blue, coverage);
 						output_row[x].alpha = input_px.alpha;
 					}
 				}
@@ -1205,10 +1188,10 @@ static PF_Err Render32(
 					}
 					else
 					{
-						const float coverage_alpha = coverage * input_px.alpha;
-						output_row[x].red = FastBlendFloat(input_px.red, color.red, coverage_alpha);
-						output_row[x].green = FastBlendFloat(input_px.green, color.green, coverage_alpha);
-						output_row[x].blue = FastBlendFloat(input_px.blue, color.blue, coverage_alpha);
+						// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+						output_row[x].red = FastBlendFloat(input_px.red, color.red, coverage);
+						output_row[x].green = FastBlendFloat(input_px.green, color.green, coverage);
+						output_row[x].blue = FastBlendFloat(input_px.blue, color.blue, coverage);
 						output_row[x].alpha = input_px.alpha;
 					}
 				}
@@ -1435,13 +1418,6 @@ static PF_Err Render16Fast(
 				for (int x = 0; x < width; x++)
 				{
 					const PF_Pixel16 &input_px = input_row[x];
-					if (input_px.alpha == 0)
-					{
-						if (!in_place)
-							output_row[x] = input_px;
-						rotated_x += rot_dx;
-						continue;
-					}
 
 					const float signed_dist = rotated_x * inv_edge_width;
 					const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
@@ -1461,10 +1437,10 @@ static PF_Err Render16Fast(
 					}
 					else
 					{
-						const float coverage_alpha = coverage * (static_cast<float>(input_px.alpha) * INV_32768);
-						output_row[x].red = FastBlend16(input_px.red, color16.red, coverage_alpha);
-						output_row[x].green = FastBlend16(input_px.green, color16.green, coverage_alpha);
-						output_row[x].blue = FastBlend16(input_px.blue, color16.blue, coverage_alpha);
+						// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+						output_row[x].red = FastBlend16(input_px.red, color16.red, coverage);
+						output_row[x].green = FastBlend16(input_px.green, color16.green, coverage);
+						output_row[x].blue = FastBlend16(input_px.blue, color16.blue, coverage);
 						output_row[x].alpha = input_px.alpha;
 					}
 
@@ -1527,6 +1503,7 @@ static PF_Err Render16Fast(
 				}
 				if (dist2_max <= r_minus2)
 				{
+					// 行全体がCircleの内側にある場合
 					for (int x = 0; x < width; ++x)
 					{
 						const PF_Pixel16 &inpx = input_row[x];
@@ -1543,14 +1520,6 @@ static PF_Err Render16Fast(
 				for (int x = 0; x < width; x++)
 				{
 					const PF_Pixel16 &input_px = input_row[x];
-					if (input_px.alpha == 0)
-					{
-						if (!in_place)
-							output_row[x] = input_px;
-						rx += dx;
-						dist2 += twodx * (rx - dx) + dx2;
-						continue;
-					}
 
 					const float dist = sqrtf(dist2);
 					const float signed_dist = (radius - dist) * (1.0f / edge_width);
@@ -1571,10 +1540,10 @@ static PF_Err Render16Fast(
 					}
 					else
 					{
-						const float coverage_alpha = coverage * (static_cast<float>(input_px.alpha) * INV_32768);
-						output_row[x].red = FastBlend16(input_px.red, color16.red, coverage_alpha);
-						output_row[x].green = FastBlend16(input_px.green, color16.green, coverage_alpha);
-						output_row[x].blue = FastBlend16(input_px.blue, color16.blue, coverage_alpha);
+						// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+						output_row[x].red = FastBlend16(input_px.red, color16.red, coverage);
+						output_row[x].green = FastBlend16(input_px.green, color16.green, coverage);
+						output_row[x].blue = FastBlend16(input_px.blue, color16.blue, coverage);
 						output_row[x].alpha = input_px.alpha;
 					}
 
@@ -1703,13 +1672,6 @@ static PF_Err Render32Fast(
 				for (int x = 0; x < width; x++)
 				{
 					const PF_PixelFloat &input_px = input_row[x];
-					if (input_px.alpha <= 0.0f)
-					{
-						if (!in_place)
-							output_row[x] = input_px;
-						rotated_x += rot_dx;
-						continue;
-					}
 
 					const float signed_dist = rotated_x * inv_edge_width;
 					const float clamped_dist = std::max(-1.0f, std::min(1.0f, signed_dist));
@@ -1729,10 +1691,10 @@ static PF_Err Render32Fast(
 					}
 					else
 					{
-						const float coverage_alpha = coverage * input_px.alpha;
-						output_row[x].red = FastBlendFloat(input_px.red, colorF.red, coverage_alpha);
-						output_row[x].green = FastBlendFloat(input_px.green, colorF.green, coverage_alpha);
-						output_row[x].blue = FastBlendFloat(input_px.blue, colorF.blue, coverage_alpha);
+						// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+						output_row[x].red = FastBlendFloat(input_px.red, colorF.red, coverage);
+						output_row[x].green = FastBlendFloat(input_px.green, colorF.green, coverage);
+						output_row[x].blue = FastBlendFloat(input_px.blue, colorF.blue, coverage);
 						output_row[x].alpha = input_px.alpha;
 					}
 
@@ -1794,6 +1756,7 @@ static PF_Err Render32Fast(
 				}
 				if (dist2_max <= r_minus2)
 				{
+					// 行全体がCircleの内側にある場合
 					for (int x = 0; x < width; ++x)
 					{
 						const PF_PixelFloat &inpx = input_row[x];
@@ -1810,14 +1773,6 @@ static PF_Err Render32Fast(
 				for (int x = 0; x < width; x++)
 				{
 					const PF_PixelFloat &input_px = input_row[x];
-					if (input_px.alpha <= 0.0f)
-					{
-						if (!in_place)
-							output_row[x] = input_px;
-						rx += dx;
-						dist2 += twodx * (rx - dx) + dx2;
-						continue;
-					}
 
 					const float dist = sqrtf(dist2);
 					const float signed_dist = (radius - dist) * (1.0f / edge_width);
@@ -1838,10 +1793,10 @@ static PF_Err Render32Fast(
 					}
 					else
 					{
-						const float coverage_alpha = coverage * input_px.alpha;
-						output_row[x].red = FastBlendFloat(input_px.red, colorF.red, coverage_alpha);
-						output_row[x].green = FastBlendFloat(input_px.green, colorF.green, coverage_alpha);
-						output_row[x].blue = FastBlendFloat(input_px.blue, colorF.blue, coverage_alpha);
+						// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+						output_row[x].red = FastBlendFloat(input_px.red, colorF.red, coverage);
+						output_row[x].green = FastBlendFloat(input_px.green, colorF.green, coverage);
+						output_row[x].blue = FastBlendFloat(input_px.blue, colorF.blue, coverage);
 						output_row[x].alpha = input_px.alpha;
 					}
 
@@ -1999,13 +1954,6 @@ static PF_Err Render8Fast(
 				for (int x = 0; x < width; x++)
 				{
 					const PF_Pixel &input_px = input_row[x];
-					if (input_px.alpha == 0)
-					{
-						if (!in_place)
-							output_row[x] = input_px;
-						rotated_x += rot_dx;
-						continue;
-					}
 
 					// Per-pixel early-out without computing coverage
 					if (rotated_x <= -edge_width)
@@ -2043,10 +1991,10 @@ static PF_Err Render8Fast(
 					}
 					else
 					{
-						const float coverage_alpha = coverage * input_px.alpha * INV_255;
-						output_row[x].red = FastBlend(input_px.red, color.red, coverage_alpha);
-						output_row[x].green = FastBlend(input_px.green, color.green, coverage_alpha);
-						output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage_alpha);
+						// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+						output_row[x].red = FastBlend(input_px.red, color.red, coverage);
+						output_row[x].green = FastBlend(input_px.green, color.green, coverage);
+						output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage);
 						output_row[x].alpha = input_px.alpha;
 					}
 
@@ -2115,6 +2063,7 @@ static PF_Err Render8Fast(
 				}
 				if (dist2_max <= r_minus2)
 				{
+					// 行全体がCircleの内側にある場合
 					for (int x = 0; x < width; ++x)
 					{
 						const PF_Pixel &inpx = input_row[x];
@@ -2131,14 +2080,6 @@ static PF_Err Render8Fast(
 				for (int x = 0; x < width; x++)
 				{
 					const PF_Pixel &input_px = input_row[x];
-					if (input_px.alpha == 0)
-					{
-						if (!in_place)
-							output_row[x] = input_px;
-						rx += dx;
-						dist2 += twodx * (rx - dx) + dx2;
-						continue;
-					}
 
 					const float dist = sqrtf(dist2);
 					const float signed_dist = (radius - dist) * (1.0f / edge_width);
@@ -2159,10 +2100,10 @@ static PF_Err Render8Fast(
 					}
 					else
 					{
-						const float coverage_alpha = coverage * input_px.alpha * INV_255;
-						output_row[x].red = FastBlend(input_px.red, color.red, coverage_alpha);
-						output_row[x].green = FastBlend(input_px.green, color.green, coverage_alpha);
-						output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage_alpha);
+						// アルファ値にはアクセスせず、coverage（色の影響量）のみでブレンド
+						output_row[x].red = FastBlend(input_px.red, color.red, coverage);
+						output_row[x].green = FastBlend(input_px.green, color.green, coverage);
+						output_row[x].blue = FastBlend(input_px.blue, color.blue, coverage);
 						output_row[x].alpha = input_px.alpha;
 					}
 
