@@ -529,16 +529,16 @@ GlobalSetup(
 		STAGE_VERSION,
 		BUILD_VERSION);
 
-	// Deep Color対応（16-bitおよび32-bit float対応）
+	// Deep Color対応（16-bit対応）
 	// PF_OutFlag_DEEP_COLOR_AWARE = 0x02000000 (16-bit対応)
 	out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE;
 
 	// 32-bit float対応とMulti-Frame Rendering対応フラグ
 	// PF_OutFlag2_FLOAT_COLOR_AWARE = 0x00000001 (32-bit float対応)
 	// PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000 (Multi-Frame Rendering対応)
-	// 両方を設定: 0x08000000 | 0x00000001 = 0x08000001
-	// PiPLファイル（sep_colorPiPL.r）と一致させる必要がある
-	out_data->out_flags2 = 0x08000001;
+	// 両方を設定することで、32-bit floatプロジェクトでも警告が出なくなります
+	// PiPLファイル（sep_colorPiPL.r）と一致させる必要があります
+	out_data->out_flags2 = PF_OutFlag2_FLOAT_COLOR_AWARE | PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
 
 	return PF_Err_NONE;
 }
@@ -1241,8 +1241,25 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 	(void)out_data;
 
 	// ビット深度に応じて適切なレンダリング関数を呼び出す
-	// まず16-bitを判定、次に32-bit floatを判定、最後に8-bitを処理
-	if (PF_WORLD_IS_DEEP(output))
+	// in_data->pixelFormatを使用して正確に判定（公式推奨方法）
+	// PF_PixelFormat_32 = 32-bit float, PF_PixelFormat_16 = 16-bit, PF_PixelFormat_8 = 8-bit
+	
+	// 32-bit floatの判定（最優先）
+	if (in_data->pixelFormat == PF_PixelFormat_32)
+	{
+		// 32-bit float処理
+		PF_PixelFloat *input_pixels = reinterpret_cast<PF_PixelFloat *>(input->data);
+		PF_PixelFloat *output_pixels = reinterpret_cast<PF_PixelFloat *>(output->data);
+#if SEP_COLOR_USE_BASELINE
+		err = Render32(in_data, out_data, params, output, input_pixels, output_pixels);
+#elif SEP_COLOR_USE_PF_ITERATE
+		err = Render32Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
+#else
+		err = Render32Fast(in_data, out_data, params, output, input_pixels, output_pixels);
+#endif
+	}
+	// 16-bitの判定
+	else if (PF_WORLD_IS_DEEP(output) || in_data->pixelFormat == PF_PixelFormat_16)
 	{
 		// 16-bit処理
 		PF_Pixel16 *input_pixels = reinterpret_cast<PF_Pixel16 *>(input->data);
@@ -1255,49 +1272,19 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 		err = Render16Fast(in_data, out_data, params, output, input_pixels, output_pixels);
 #endif
 	}
+	// 8-bit処理（デフォルト）
 	else
 	{
-		// 32-bit floatか8-bitかを判定
-		// 32-bit floatの場合、1ピクセルあたり16バイト（4チャンネル × 4バイト）
-		// 8-bitの場合、1ピクセルあたり4バイト（4チャンネル × 1バイト）
-		bool is_32bit_float = false;
-		if (output->width > 0 && output->rowbytes > 0)
-		{
-			// rowbytesをwidthで割って、1ピクセルあたりのバイト数を計算
-			// パディングを考慮して、16バイト以上なら32-bit floatと判定
-			A_long bytes_per_pixel = output->rowbytes / output->width;
-			if (bytes_per_pixel >= 16)
-			{
-				is_32bit_float = true;
-			}
-		}
-
-		if (is_32bit_float)
-		{
-			// 32-bit float処理
-			PF_PixelFloat *input_pixels = reinterpret_cast<PF_PixelFloat *>(input->data);
-			PF_PixelFloat *output_pixels = reinterpret_cast<PF_PixelFloat *>(output->data);
+		// 8-bit処理
+		PF_Pixel *input_pixels = reinterpret_cast<PF_Pixel *>(input->data);
+		PF_Pixel *output_pixels = reinterpret_cast<PF_Pixel *>(output->data);
 #if SEP_COLOR_USE_BASELINE
-			err = Render32(in_data, out_data, params, output, input_pixels, output_pixels);
+		err = Render8(in_data, out_data, params, output, input_pixels, output_pixels);
 #elif SEP_COLOR_USE_PF_ITERATE
-			err = Render32Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
+		err = Render8Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
 #else
-			err = Render32Fast(in_data, out_data, params, output, input_pixels, output_pixels);
+		err = Render8Fast(in_data, out_data, params, output, input_pixels, output_pixels);
 #endif
-		}
-		else
-		{
-			// 8-bit処理（デフォルト）
-			PF_Pixel *input_pixels = reinterpret_cast<PF_Pixel *>(input->data);
-			PF_Pixel *output_pixels = reinterpret_cast<PF_Pixel *>(output->data);
-#if SEP_COLOR_USE_BASELINE
-			err = Render8(in_data, out_data, params, output, input_pixels, output_pixels);
-#elif SEP_COLOR_USE_PF_ITERATE
-			err = Render8Iterate(in_data, out_data, params, output, input_pixels, output_pixels);
-#else
-			err = Render8Fast(in_data, out_data, params, output, input_pixels, output_pixels);
-#endif
-		}
 	}
 
 	return err;
