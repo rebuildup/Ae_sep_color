@@ -1,3 +1,0 @@
-# HalideはGitHub Actionsでインストールされるため、LFSは使用しない
-# ヘッダーファイルのみを通常のGitで管理
-third_party/halide/include/*.h text
