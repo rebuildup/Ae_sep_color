@@ -23,12 +23,3 @@ output/
 # OS/editor junk
 .DS_Store
 Thumbs.db
-
-# HalideバイナリファイルはGitHub Actionsでインストールされるため、リポジトリに含めない
-third_party/halide/win/lib/
-third_party/halide/win/bin/
-third_party/halide/mac/lib/
-# ヘッダーファイルは含める
-!third_party/halide/include/
-
-
