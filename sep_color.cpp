@@ -538,10 +538,20 @@ GlobalSetup(
 	// PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000 (Multi-Frame Rendering対応)
 	// 両方を設定することで、32-bit floatプロジェクトでも警告が出なくなります
 	// PiPLファイル（sep_colorPiPL.r）と一致させる必要があります
-	// 定数が利用可能な場合はそれを使用、そうでない場合は数値を使用
 	out_data->out_flags2 = 0x08000001; // PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_FLOAT_COLOR_AWARE
 
-	return PF_Err_NONE;
+	// 32-bit floatピクセルフォーマットのサポートを明示的に宣言
+	// これにより、After Effectsがプラグインが32-bit floatをサポートしていることを認識します
+	PF_PixelFormatSuite1 *pixelFormatSuite = NULL;
+	err = PF_CHECKOUT_SUITE(in_data, PF_PixelFormatSuite1, PF_PixelFormatSuite1_VERSION, out_data, (const void**)&pixelFormatSuite);
+	if (!err && pixelFormatSuite)
+	{
+		// PF_PixelFormat_FLOATをサポートするピクセルフォーマットとして追加
+		err = pixelFormatSuite->AddSupportedPixelFormat(in_data->effect_ref, PF_PixelFormat_FLOAT);
+		PF_CHECKIN_SUITE(in_data, PF_PixelFormatSuite1, PF_PixelFormatSuite1_VERSION, out_data, (const void**)&pixelFormatSuite);
+	}
+
+	return err;
 }
 
 static PF_Err
