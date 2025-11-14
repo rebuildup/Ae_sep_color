@@ -538,7 +538,8 @@ GlobalSetup(
 	// PF_OutFlag2_SUPPORTS_THREADED_RENDERING = 0x08000000 (Multi-Frame Rendering対応)
 	// 両方を設定することで、32-bit floatプロジェクトでも警告が出なくなります
 	// PiPLファイル（sep_colorPiPL.r）と一致させる必要があります
-	out_data->out_flags2 = PF_OutFlag2_FLOAT_COLOR_AWARE | PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
+	// 定数が利用可能な場合はそれを使用、そうでない場合は数値を使用
+	out_data->out_flags2 = 0x08000001; // PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_FLOAT_COLOR_AWARE
 
 	return PF_Err_NONE;
 }
@@ -1241,11 +1242,22 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 	(void)out_data;
 
 	// ビット深度に応じて適切なレンダリング関数を呼び出す
-	// in_data->pixelFormatを使用して正確に判定（公式推奨方法）
-	// PF_PixelFormat_32 = 32-bit float, PF_PixelFormat_16 = 16-bit, PF_PixelFormat_8 = 8-bit
-	
 	// 32-bit floatの判定（最優先）
-	if (in_data->pixelFormat == PF_PixelFormat_32)
+	// PF_WORLD_IS_FLOATマクロが利用可能な場合はそれを使用、そうでない場合はrowbytesで判定
+	// 32-bit floatの場合、1ピクセルあたり16バイト（4チャンネル × 4バイト）
+	bool is_32bit_float = false;
+	if (!PF_WORLD_IS_DEEP(output) && output->width > 0 && output->rowbytes > 0)
+	{
+		// rowbytesをwidthで割って、1ピクセルあたりのバイト数を計算
+		// パディングを考慮して、16バイト以上なら32-bit floatと判定
+		A_long bytes_per_pixel = output->rowbytes / output->width;
+		if (bytes_per_pixel >= 16)
+		{
+			is_32bit_float = true;
+		}
+	}
+	
+	if (is_32bit_float)
 	{
 		// 32-bit float処理
 		PF_PixelFloat *input_pixels = reinterpret_cast<PF_PixelFloat *>(input->data);
@@ -1259,7 +1271,7 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 #endif
 	}
 	// 16-bitの判定
-	else if (PF_WORLD_IS_DEEP(output) || in_data->pixelFormat == PF_PixelFormat_16)
+	else if (PF_WORLD_IS_DEEP(output))
 	{
 		// 16-bit処理
 		PF_Pixel16 *input_pixels = reinterpret_cast<PF_Pixel16 *>(input->data);
