@@ -420,6 +420,7 @@ static PF_Err Render16Iterate(
 		&rc,
 		IteratePix16,
 		output);
+	return err;
 }
 
 static PF_Err IteratePix32(void *refcon, A_long x, A_long y, PF_PixelFloat *in, PF_PixelFloat *out)
@@ -524,6 +525,7 @@ static PF_Err Render32Iterate(
 		&rc,
 		IteratePix32,
 		output);
+	return err;
 }
 #endif // SEP_COLOR_USE_PF_ITERATE
 #endif // SEP_COLOR_USE_PF_ITERATE
