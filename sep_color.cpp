@@ -1248,19 +1248,10 @@ static PF_Err Render(PF_InData *in_data, PF_OutData *out_data, PF_ParamDef *para
 
 	// ビット深度に応じて適切なレンダリング関数を呼び出す
 	// 32-bit floatの判定（最優先）
-	// in_data->pixelFormatを使用して判定（公式推奨方法）
-	// フォールバック: rowbytesで判定（SDKバージョンによってはpixelFormatが利用できない場合がある）
+	// rowbytesで判定（最も互換性が高い方法）
+	// 32-bit floatの場合、1ピクセルあたり16バイト（4チャンネル × 4バイト）
 	bool is_32bit_float = false;
-	
-	// 方法1: in_data->pixelFormatを使用（推奨）
-	// 32-bit floatは通常、pixelFormat == 2
-	// 定数名はSDKバージョンによって異なる可能性があるため、数値で判定
-	if (in_data->pixelFormat == 2)
-	{
-		is_32bit_float = true;
-	}
-	// 方法2: rowbytesで判定（フォールバック）
-	else if (!PF_WORLD_IS_DEEP(output) && output->width > 0 && output->rowbytes > 0)
+	if (!PF_WORLD_IS_DEEP(output) && output->width > 0 && output->rowbytes > 0)
 	{
 		// rowbytesをwidthで割って、1ピクセルあたりのバイト数を計算
 		// パディングを考慮して、16バイト以上なら32-bit floatと判定
