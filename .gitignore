@@ -5,7 +5,7 @@ Win/**/Release/
 Win/**/ipch/
 *.pdb
 *.ilk
-*.exp
+Win/**/*.exp
 *.bsc
 *.tlog/
 *.obj
