@@ -9,9 +9,7 @@ struct TableString
 static TableString g_strs[StrID_NUMTYPES] = {
     {StrID_NONE, ""},
     {StrID_Name, "sep_color"},
-    {StrID_Description, "A plugin for coloring areas \rCopyright2025361do_sleep"},
-    {StrID_Gain_Param_Name, "Gain"},
-    {StrID_Color_Param_Name, "Color"}};
+    {StrID_Description, "A plugin for coloring areas\r\nCopyright (c) 2025 361do_sleep"}};
 
 char *GetStringPtr(int strNum)
 {

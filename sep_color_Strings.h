@@ -5,8 +5,6 @@ typedef enum
     StrID_NONE = 0,
     StrID_Name,
     StrID_Description,
-    StrID_Gain_Param_Name,
-    StrID_Color_Param_Name,
     StrID_NUMTYPES
 } StrIDType;
 

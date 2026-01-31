@@ -3,7 +3,7 @@
 #ifndef SKELETON_H
 #define SKELETON_H
 
-typedef unsigned char u_char;
+using u_char = unsigned char;
 typedef unsigned short u_short;
 typedef unsigned short u_int16;
 typedef unsigned long u_long;
@@ -11,8 +11,8 @@ typedef short int int16;
 #define PF_TABLE_BITS 12
 #define PF_TABLE_SZ_16 4096
 
-#define PF_DEEP_COLOR_AWARE1 // make sure we get16bpc pixels; \
-								// AE_Effect.h checks for this.
+#define PF_DEEP_COLOR_AWARE // make sure we get16bpc pixels; \
+							 // AE_Effect.h checks for this.
 
 #include "AEConfig.h"
 

@@ -154,6 +154,7 @@
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
       <TargetMachine>MachineX64</TargetMachine>
       <DelayLoadDLLs>%(DelayLoadDLLs)</DelayLoadDLLs>
+      <ModuleDefinitionFile>sep_color.exp</ModuleDefinitionFile>
     </Link>
     <Bscmake>
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
@@ -214,6 +215,7 @@
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
       <DelayLoadDLLs>%(DelayLoadDLLs)</DelayLoadDLLs>
+      <ModuleDefinitionFile>sep_color.exp</ModuleDefinitionFile>
     </Link>
     <Bscmake>
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
@@ -277,6 +279,7 @@
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
       <TargetMachine>MachineX64</TargetMachine>
       <DelayLoadDLLs>%(DelayLoadDLLs)</DelayLoadDLLs>
+      <ModuleDefinitionFile>sep_color.exp</ModuleDefinitionFile>
     </Link>
     <Bscmake>
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
@@ -338,6 +341,7 @@
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>$(IntDir)/$(TargetName).lib</ImportLibrary>
       <DelayLoadDLLs>%(DelayLoadDLLs)</DelayLoadDLLs>
+      <ModuleDefinitionFile>sep_color.exp</ModuleDefinitionFile>
     </Link>
     <Bscmake>
       <OutputFile>$(IntDir)$(TargetName).bsc</OutputFile>
@@ -375,6 +379,9 @@ cl /D "MSWindows" /EP $(IntDir)%(Filename).rrc &gt;               "$(ProjectDir)
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="sep_colorPiPL.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <ModuleDefinitionFile Include="sep_color.exp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\Headers\AE_PluginData.h" />

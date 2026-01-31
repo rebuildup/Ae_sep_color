@@ -1,5 +1,6 @@
 #include "AEConfig.h"
 #include "AE_EffectVers.h"
+#include "sep_color.h"
 
 /* Include AE_General.r for resource definitions on Mac */
 #ifdef AE_OS_MAC
@@ -47,7 +48,7 @@ resource 'PiPL' (16000) {
 		},
 		/* [8] */
 		AE_Effect_Version {
-			557057	/*1.1 */
+			0x00010100	/* Version 1.1.0 encoded as (MAJOR << 16) | (MINOR << 8) | BUGFIX */
 		},
 		/* [9] */
 		AE_Effect_Info_Flags {
@@ -60,9 +61,15 @@ resource 'PiPL' (16000) {
 		AE_Effect_Global_OutFlags_2 {
 			0x08000001 // PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_FLOAT_COLOR_AWARE
 		},
+		AE_Effect_OutFlags {
+			0
+		},
+		AE_Effect_OutFlags_2 {
+			0
+		},
 		/* [11] */
 		AE_Effect_Match_Name {
-			"361do sep_color"
+			"361do_sep_color"
 		},
 		/* [12] */
 		AE_Reserved_Info {
