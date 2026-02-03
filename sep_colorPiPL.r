@@ -60,12 +60,6 @@ resource 'PiPL' (16000) {
 		AE_Effect_Global_OutFlags_2 {
 			0x08000001 // PF_OutFlag2_SUPPORTS_THREADED_RENDERING | PF_OutFlag2_FLOAT_COLOR_AWARE
 		},
-		AE_Effect_OutFlags {
-			0
-		},
-		AE_Effect_OutFlags_2 {
-			0
-		},
 		/* [11] */
 		AE_Effect_Match_Name {
 			"361do_sep_color"
