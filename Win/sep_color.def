@@ -1,11 +1,3 @@
 LIBRARY sep_color
-
 EXPORTS
-
 EffectMain
-
-PF_GetEffectDescriptor
-
-PF_GetEffectGlobalData
-
-PF_EffectMain
