@@ -10,6 +10,11 @@
 
 #include <vector>
 
+// Define PF_WorldFlag_FLOAT if not already defined in SDK
+#ifndef PF_WorldFlag_FLOAT
+#define PF_WorldFlag_FLOAT 0x00000002  // 32-bit float world flag
+#endif
+
 // Named constants for magic numbers
 
 namespace Constants {
@@ -79,8 +84,11 @@ namespace Constants {
 // ============================================================================
 
 // PixelTraits: Type traits template for pixel depth specialization
+// Only define if not already provided by SDK (AEFX_ChannelDepthTpl.h)
 
 // ============================================================================
+
+#ifndef AEFX_ChannelDepthTpl_h
 
 template<typename PixelType>
 
@@ -296,13 +304,16 @@ struct PixelTraits<PF_PixelFloat>
 
 };
 
+#endif // AEFX_ChannelDepthTpl_h
+
 // Legacy wrappers for backward compatibility
+// Use inline blend functions to avoid dependency on SDK's PixelTraits::Blend
 
 static inline A_u_char FastBlend(A_u_char src, A_u_char dst, float coverage_alpha)
 
 {
 
-	return PixelTraits<PF_Pixel>::Blend(src, dst, coverage_alpha);
+	return static_cast<A_u_char>(src + (dst - src) * coverage_alpha + 0.5f);
 
 }
 
@@ -310,7 +321,7 @@ static inline A_u_short FastBlend16(A_u_short src, A_u_short dst, float coverage
 
 {
 
-	return PixelTraits<PF_Pixel16>::Blend(src, dst, coverage_alpha);
+	return static_cast<A_u_short>(src + (dst - src) * coverage_alpha + 0.5f);
 
 }
 
@@ -318,7 +329,7 @@ static inline float FastBlendFloat(float src, float dst, float coverage_alpha)
 
 {
 
-	return PixelTraits<PF_PixelFloat>::Blend(src, dst, coverage_alpha);
+	return src + (dst - src) * coverage_alpha;
 
 }
 
@@ -902,7 +913,8 @@ static PF_Err IteratePix32(void *refcon, A_long x, A_long y, PF_PixelFloat *in, 
 
 	{
 
-		const float cs = cosf(rc.angle), sn = sinf(rc.angle);
+		const float cs = cosf(rc.angle);
+		const float sn = sinf(rc.angle);
 
 		const float rot_x = fx * cs + fy * sn;
 
