@@ -1,6 +1,5 @@
 #include "AEConfig.h"
 #include "AE_EffectVers.h"
-#include "sep_color.h"
 
 /* Include AE_General.r for resource definitions on Mac */
 #ifdef AE_OS_MAC
