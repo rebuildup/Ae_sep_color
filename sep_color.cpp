@@ -83,229 +83,6 @@ namespace Constants {
 
 // ============================================================================
 
-// PixelTraits: Type traits template for pixel depth specialization
-// Only define if not already provided by SDK (AEFX_ChannelDepthTpl.h)
-
-// ============================================================================
-
-#ifndef AEFX_ChannelDepthTpl_h
-
-template<typename PixelType>
-
-struct PixelTraits;
-
-// Specialization for 8-bit pixels (PF_Pixel)
-
-template<>
-
-struct PixelTraits<PF_Pixel>
-
-{
-
-	using ChannelType = A_u_char;
-
-	using PixelType = PF_Pixel;
-
-	static constexpr float INV_MAX = Constants::COLOR_SCALE_8_TO_FLOAT;  // 1.0f / 255.0f
-
-	static constexpr ChannelType MAX_CHANNEL = static_cast<ChannelType>(Constants::COLOR_8BIT_MAX);  // 255
-
-	static constexpr bool IsFloat = false;
-
-	static inline ChannelType Blend(ChannelType src, ChannelType dst, float coverage)
-
-	{
-
-		return static_cast<ChannelType>(src + (dst - src) * coverage + 0.5f);
-
-	}
-
-	static inline bool IsTransparent(const PixelType& px)
-
-	{
-
-		return px.alpha == 0;
-
-	}
-
-	static inline void SetColor(PixelType& px, ChannelType r, ChannelType g, ChannelType b, ChannelType a)
-
-	{
-
-		px.red = r;
-
-		px.green = g;
-
-		px.blue = b;
-
-		px.alpha = a;
-
-	}
-
-	static inline void CopyPixel(const PixelType& src, PixelType& dst)
-
-	{
-
-		dst = src;
-
-	}
-
-	static inline void ConvertColor8(const PF_Pixel& color8, PixelType& out)
-
-	{
-
-		out = color8;
-
-	}
-
-};
-
-// Specialization for 16-bit pixels (PF_Pixel16)
-
-template<>
-
-struct PixelTraits<PF_Pixel16>
-
-{
-
-	using ChannelType = A_u_short;
-
-	using PixelType = PF_Pixel16;
-
-	static constexpr float INV_MAX = 1.0f / Constants::COLOR_16BIT_MAX;  // 1.0f / 32768.0f
-
-	static constexpr ChannelType MAX_CHANNEL = static_cast<ChannelType>(Constants::COLOR_16BIT_MAX);  // 32768
-
-	static constexpr bool IsFloat = false;
-
-	static inline ChannelType Blend(ChannelType src, ChannelType dst, float coverage)
-
-	{
-
-		return static_cast<ChannelType>(src + (dst - src) * coverage + 0.5f);
-
-	}
-
-	static inline bool IsTransparent(const PixelType& px)
-
-	{
-
-		return px.alpha == 0;
-
-	}
-
-	static inline void SetColor(PixelType& px, ChannelType r, ChannelType g, ChannelType b, ChannelType a)
-
-	{
-
-		px.red = r;
-
-		px.green = g;
-
-		px.blue = b;
-
-		px.alpha = a;
-
-	}
-
-	static inline void CopyPixel(const PixelType& src, PixelType& dst)
-
-	{
-
-		dst = src;
-
-	}
-
-	static inline void ConvertColor8(const PF_Pixel& color8, PixelType& out)
-
-	{
-
-		out.red = static_cast<A_u_short>((color8.red * Constants::COLOR_SCALE_8_TO_16 + Constants::COLOR_ROUND_OFFSET_16));
-
-		out.green = static_cast<A_u_short>((color8.green * Constants::COLOR_SCALE_8_TO_16 + Constants::COLOR_ROUND_OFFSET_16));
-
-		out.blue = static_cast<A_u_short>((color8.blue * Constants::COLOR_SCALE_8_TO_16 + Constants::COLOR_ROUND_OFFSET_16));
-
-		out.alpha = MAX_CHANNEL;
-
-	}
-
-};
-
-// Specialization for 32-bit float pixels (PF_PixelFloat)
-
-template<>
-
-struct PixelTraits<PF_PixelFloat>
-
-{
-
-	using ChannelType = float;
-
-	using PixelType = PF_PixelFloat;
-
-	static constexpr float INV_MAX = 1.0f;
-
-	static constexpr ChannelType MAX_CHANNEL = 1.0f;
-
-	static constexpr bool IsFloat = true;
-
-	static inline ChannelType Blend(ChannelType src, ChannelType dst, float coverage)
-
-	{
-
-		return src + (dst - src) * coverage;
-
-	}
-
-	static inline bool IsTransparent(const PixelType& px)
-
-	{
-
-		return px.alpha <= 0.0f;
-
-	}
-
-	static inline void SetColor(PixelType& px, ChannelType r, ChannelType g, ChannelType b, ChannelType a)
-
-	{
-
-		px.red = r;
-
-		px.green = g;
-
-		px.blue = b;
-
-		px.alpha = a;
-
-	}
-
-	static inline void CopyPixel(const PixelType& src, PixelType& dst)
-
-	{
-
-		dst = src;
-
-	}
-
-	static inline void ConvertColor8(const PF_Pixel& color8, PixelType& out)
-
-	{
-
-		out.red = static_cast<float>(color8.red) * Constants::COLOR_SCALE_8_TO_FLOAT;
-
-		out.green = static_cast<float>(color8.green) * Constants::COLOR_SCALE_8_TO_FLOAT;
-
-		out.blue = static_cast<float>(color8.blue) * Constants::COLOR_SCALE_8_TO_FLOAT;
-
-		out.alpha = 1.0f;
-
-	}
-
-};
-
-#endif // AEFX_ChannelDepthTpl_h
-
 // Legacy wrappers for backward compatibility
 // Use inline blend functions to avoid dependency on SDK's PixelTraits::Blend
 
@@ -536,6 +313,8 @@ static PF_Err Render8Iterate(
 	rc.anchor_y = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
 
 	rc.angle = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16) * Constants::DEG_TO_RAD;
+	rc.cs = cosf(rc.angle);
+	rc.sn = sinf(rc.angle);
 
 	rc.radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
 
@@ -798,6 +577,8 @@ static PF_Err Render16Iterate(
 	rc.anchor_y = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
 
 	rc.angle = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16) * Constants::DEG_TO_RAD;
+	rc.cs = cosf(rc.angle);
+	rc.sn = sinf(rc.angle);
 
 	rc.radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
 
@@ -913,10 +694,7 @@ static PF_Err IteratePix32(void *refcon, A_long x, A_long y, PF_PixelFloat *in, 
 
 	{
 
-		const float cs = cosf(rc.angle);
-		const float sn = sinf(rc.angle);
-
-		const float rot_x = fx * cs + fy * sn;
+		const float rot_x = fx * rc->cs + fy * rc->sn;
 
 		const float sd = rot_x * rc->inv_edge_width;
 
@@ -1019,6 +797,8 @@ static PF_Err Render32Iterate(
 	rc.anchor_y = (params[ID_ANCHOR_POINT]->u.td.y_value >> 16);
 
 	rc.angle = static_cast<float>(params[ID_ANGLE]->u.ad.value >> 16) * Constants::DEG_TO_RAD;
+	rc.cs = cosf(rc.angle);
+	rc.sn = sinf(rc.angle);
 
 	rc.radius = static_cast<float>(params[ID_RADIUS]->u.fs_d.value);
 
