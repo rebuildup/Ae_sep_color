@@ -23,3 +23,7 @@ output/
 # OS/editor junk
 .DS_Store
 Thumbs.db
+# XcodeGen generated files and local SDK path
+/sep_color.xcodeproj/
+/build/
+/.env.local
