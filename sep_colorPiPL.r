@@ -47,7 +47,11 @@ resource 'PiPL' (16000) {
 		},
 		/* [8] */
 		AE_Effect_Version {
-			0x00010100	/* Version 1.1.0 encoded as (MAJOR << 16) | (MINOR << 8) | BUGFIX */
+			/* PF_VERSION(1, 1, 0, PF_Stage_DEVELOP, 1).
+			   The previous literal 0x00010100 encoded 0.1.0.1 instead of
+			   1.1.0.1, so the PiPL disagreed with the version the code
+			   reports from PF_Cmd_GLOBAL_SETUP. */
+			0x00088001
 		},
 		/* [9] */
 		AE_Effect_Info_Flags {
